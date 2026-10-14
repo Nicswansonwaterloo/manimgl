@@ -59,11 +59,9 @@ def parse_args():
     parser.add_argument("--compare", nargs=2, type=Path, metavar=("BASELINE", "CANDIDATE"),
                         help="compare two result directories or results.json files; no rendering")
     parser.add_argument("--scene-file", type=Path, help="benchmark scenes from a file, e.g. example_scenes.py")
-    parser.add_argument("--gpu-timing", action="store_true", help="profile GPU render passes using timestamp queries (adds overhead)")
     parser.add_argument("--only", nargs="+", metavar="NAME", help="scene names or quoted globs")
-    parser.add_argument("--repeat", type=positive_int, default=1)
-    parser.add_argument("--resolution", default="1920x1080")
-    parser.add_argument("--fps", type=positive_int, default=60)
+    parser.add_argument("--resolution", default="854x480")
+    parser.add_argument("--fps", type=positive_int, default=15)
     parser.add_argument("--timeout", type=positive_int, default=300, help="seconds per scene")
     parser.add_argument("--output", type=Path, help="new directory for JSON, CSV and logs")
     parser.add_argument("--compile-video", action="store_true", help="keep suite.mp4 inside the result directory")
@@ -91,14 +89,15 @@ def stop_process(process):
 def run_one(scene, iteration, args, output, scratch, retained_clip=None):
     label = f"{scene['name']}-{iteration:02d}"
     log_path = output / "logs" / f"{label}.log"
+    scene_cache = scratch / "scene-caches" / scene["name"]
     readings = {"rss": [], "gpu": {}}
     notes = set()
     timed_out = False
     with tempfile.TemporaryDirectory(prefix=label, dir=scratch) as temporary:
         temporary = Path(temporary)
         metrics_path = temporary / "metrics.json"
-        config = {"directories": {"cache": str(scratch / "cache"),
-                                  "subdirs": {"latex_cache": str(temporary / "latex")}},
+        config = {"directories": {"cache": str(scene_cache / "cache"),
+                                  "subdirs": {"latex_cache": str(scene_cache / "latex")}},
                   "text": {"font": "sans-serif"},
                   "file_writer": {"video_codec": "libx264", "pixel_format": "yuv420p", "crf": 23}}
         config_path = temporary / "config.yml"
@@ -108,8 +107,7 @@ def run_one(scene, iteration, args, output, scratch, retained_clip=None):
                    "--video_dir", str(temporary), "--file_name", scene["name"],
                    "--config_file", str(config_path), "--log-level", "WARNING"]
         env = {**os.environ, "MANIM_BENCHMARK_METRICS": str(metrics_path),
-               "MANIM_BENCHMARK_GPU_TIMING": "1" if getattr(args, "gpu_timing", False) else "0",
-               "MPLCONFIGDIR": str(scratch / "matplotlib"),
+               "MPLCONFIGDIR": str(scene_cache / "matplotlib"),
                "MANIM_BENCHMARK_ASSETS": str(scratch / "assets"),
                "PYTHONDONTWRITEBYTECODE": "1",
                "PYTHONPATH": str(ROOT) + os.pathsep + os.environ.get("PYTHONPATH", "")}
@@ -142,13 +140,11 @@ def run_one(scene, iteration, args, output, scratch, retained_clip=None):
     gpu = [{"id": uuid, "uuid": uuid if values["provider"] == "nvidia-smi" else None,
             "name": values["name"], "provider": values["provider"], "scope": "device-wide",
             "samples": len(values["utilization"]),
-            "mean_utilization_percent": statistics.mean(values["utilization"]) if values["utilization"] else None,
-            "peak_memory_mib": max(values["memory"], default=None)} for uuid, values in readings["gpu"].items()]
+            "mean_utilization_percent": statistics.mean(values["utilization"]) if values["utilization"] else None} for uuid, values in readings["gpu"].items()]
     render_time = worker.get("scene_run_seconds")
     cpu_time = worker.get("cpu_seconds")
-    rendering = worker.get("gpu_rendering", {})
     utilization = [device["mean_utilization_percent"] for device in gpu if device["mean_utilization_percent"] is not None]
-    return {"name": scene["name"], "iteration": iteration,
+    return {"name": scene["name"], "iteration": iteration, "phase": "first" if iteration == 1 else "cached",
             "status": "ok" if success else "timeout" if timed_out else "failed",
             "wall_seconds": wall, "render_seconds": render_time,
             "frames": worker.get("frames_written"),
@@ -157,12 +153,10 @@ def run_one(scene, iteration, args, output, scratch, retained_clip=None):
             "tree_peak_mib": max(readings["rss"]) / 2**20 if readings["rss"] else None,
             "worker_peak_mib": worker.get("worker_peak_rss_bytes", 0) / 2**20 if worker.get("worker_peak_rss_bytes") else None,
             "gpu": gpu or None, "notes": sorted(notes), "video_bytes": size, "movies_deleted": True,
-            "adapter": worker.get("adapter"), "gpu_rendering": rendering,
-            "gpu_render_passes": rendering.get("render_passes_submitted"),
+            "adapter": worker.get("adapter"),
             # A single device can be displayed unambiguously. Multi-GPU readings
             # remain per-device in JSON instead of conflating unrelated adapters.
             "device_gpu_utilization_percent": utilization[0] if len(gpu) == 1 and utilization else None,
-            "gpu_pass_mean_ms": rendering.get("render_pass_mean_ms"),
             "import_seconds": worker.get("import_seconds"), "scene_init_seconds": worker.get("scene_init_seconds"),
             "animation_seconds": worker.get("animation_seconds"), "msaa_samples": worker.get("msaa_samples"),
             "log": str(log_path.relative_to(output))}
@@ -209,7 +203,7 @@ def main():
     output.mkdir(parents=True, exist_ok=False)
     (output / "logs").mkdir()
     CONSOLE.rule("[bold cyan]ManimGL Render Benchmark")
-    CONSOLE.print(f"[bold]{args.resolution} · {args.fps} fps · {len(scenes)} scenes · {args.repeat} repetition(s)[/bold]\n"
+    CONSOLE.print(f"[bold]{args.resolution} · {args.fps} fps · {len(scenes)} scenes · first run + cached repeat[/bold]\n"
                   "One renderer at a time · movie encoding included · temporary data deleted")
     clips = {}
     failed = False
@@ -219,9 +213,10 @@ def main():
             if not args.scene_file:
                 prepare_assets(scratch / "assets")
             for number, scene in enumerate(scenes, 1):
-                for iteration in range(1, args.repeat + 1):
+                for iteration in (1, 2):
                     clip = scratch / f"{number:02d}-{scene['name']}.mp4" if args.compile_video and scene["name"] not in clips else None
-                    with CONSOLE.status(f"[{number}/{len(scenes)}] {scene['name']} · run {iteration}/{args.repeat}"):
+                    phase_label = "first run" if iteration == 1 else "cached repeat"
+                    with CONSOLE.status(f"[{number}/{len(scenes)}] {scene['name']} · {phase_label}"):
                         result = run_one(scene, iteration, args, output, scratch, clip)
                     report["runs"].append(result)
                     if len(report["runs"]) == 1 and result.get("adapter"):

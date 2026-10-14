@@ -6,15 +6,28 @@ from pathlib import Path
 import unittest
 
 from benchmarks.support.reporting import comparison_rows, make_report
+from benchmarks.support import reporting
+from unittest.mock import patch
 
 
 class ReportingTests(unittest.TestCase):
+    def test_two_tables_include_gpu_and_total_uses_minutes_seconds(self):
+        runs = [{"name": "Case", "phase": phase, "status": "ok", "wall_seconds": 61.4}
+                for phase in ("first", "cached")]
+        with patch.object(reporting, "CONSOLE") as console:
+            reporting.print_results({"runs": runs, "summary": reporting.summarize(runs)})
+        tables = [call.args[0] for call in console.print.call_args_list
+                  if isinstance(call.args[0], reporting.Table)]
+        self.assertEqual(len(tables), 2)
+        self.assertTrue(all("GPU %" in [c.header for c in table.columns] for table in tables))
+        self.assertIn("2m 03s", console.print.call_args.args[0])
+
     def report(self, seconds=10):
-        return {"schema_version": 4, "resolution": "1920x1080", "fps": 60,
-                "gpu_timing_requested": False, "encoding": {"crf": 23}, "workload_sha256": "same",
-                "repeat": 3, "scenes": [{"name": "Case"}], "interrupted": False,
-                "summary": [{"name": "Case", "passed": 3, "failed": 0,
-                             "render_seconds": seconds, "wall_seconds": seconds + 2}]}
+        return {"schema_version": 6, "resolution": "1920x1080", "fps": 60,
+                "encoding": {"crf": 23}, "workload_sha256": "same",
+                "phases": ["first", "cached"], "scenes": [{"name": "Case"}], "interrupted": False,
+                "summary": [{"name": "Case", "phase": phase, "status": "ok",
+                             "render_seconds": seconds, "wall_seconds": seconds + 2} for phase in ("first", "cached")]}
 
     def test_negative_means_faster_and_positive_means_slower(self):
         baseline = self.report()
@@ -24,7 +37,7 @@ class ReportingTests(unittest.TestCase):
     def test_different_workloads_or_settings_are_rejected(self):
         baseline = self.report()
         for field, different in [("workload_sha256", "changed"), ("fps", 30),
-                                 ("resolution", "640x360"), ("gpu_timing_requested", True),
+                                 ("resolution", "640x360"),
                                  ("encoding", {"crf": 0})]:
             candidate = deepcopy(baseline)
             candidate[field] = different
@@ -33,9 +46,9 @@ class ReportingTests(unittest.TestCase):
 
     def test_failed_or_partial_repetitions_have_no_percentage(self):
         baseline, candidate = self.report(), self.report(2)
-        candidate["summary"][0].update(passed=2, failed=1)
+        candidate["summary"][0]["status"] = "failed"
         self.assertIsNone(comparison_rows(baseline, candidate)[0]["render_change_percent"])
-        candidate["summary"][0]["failed"] = 0
+        candidate["summary"][0]["status"] = "timeout"
         self.assertIsNone(comparison_rows(baseline, candidate)[0]["render_change_percent"])
 
     def test_interrupted_and_missing_scenes_are_rejected(self):
@@ -52,7 +65,7 @@ class ReportingTests(unittest.TestCase):
         # Use an existing helper root; the temporary source simulates a selected
         # external scene without importing Manim or touching the real workload.
         root = Path(__file__).resolve().parents[2]
-        args = argparse.Namespace(resolution="1920x1080", fps=60, repeat=3, gpu_timing=False)
+        args = argparse.Namespace(resolution="1920x1080", fps=60)
         with tempfile.TemporaryDirectory() as temporary:
             source = Path(temporary) / "case.py"
             source.write_text("class Case: pass\n")

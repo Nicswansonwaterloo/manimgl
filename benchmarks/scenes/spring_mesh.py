@@ -2,12 +2,12 @@ from manimlib import *
 
 
 class SpringMesh(Scene):
-    """288 nodes and 542 connecting lines updated as one deforming elastic sheet."""
+    """224 nodes and 418 connecting lines updated as one deforming elastic sheet."""
     default_camera_config = dict(background_color="#092B32")
 
     def construct(self):
-        rows, cols = 16, 18
-        homes = np.array([[(c - 8.5) * 0.55, (r - 7.5) * 0.35, 0]
+        rows, cols = 14, 16
+        homes = np.array([[(c / (cols - 1) - 0.5) * 9.35, (r / (rows - 1) - 0.5) * 5.25, 0]
                           for r in range(rows) for c in range(cols)])
         edges = [(r * cols + c, r * cols + c + 1) for r in range(rows) for c in range(cols - 1)]
         edges += [(r * cols + c, (r + 1) * cols + c) for r in range(rows - 1) for c in range(cols)]

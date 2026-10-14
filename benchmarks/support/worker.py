@@ -16,9 +16,6 @@ def main():
     from manimlib.__main__ import main as render
     from manimlib.scene.scene import Scene
     from manimlib.scene.scene_file_writer import SceneFileWriter
-    from benchmarks.support.gpu import install
-
-    install(timing_requested=os.environ.get("MANIM_BENCHMARK_GPU_TIMING") == "1")
 
     metrics = {"import_seconds": time.perf_counter() - started, "frames_written": 0}
     original_init = Scene.__init__
@@ -43,7 +40,6 @@ def main():
         metrics["interrupted"] = self.file_writer.ended_with_interrupt
         encoder = getattr(self.file_writer, "writing_process", None)
         metrics["encoder_returncode"] = encoder.returncode if encoder else None
-        metrics["gpu_rendering"] = self.camera.gpu.benchmark_measurement.finish()
 
     def measured_write(self):
         original_write(self)

@@ -43,22 +43,20 @@ def monitor_resources(pid, stop, readings, notes):
         if (nvidia or apple) and time.monotonic() >= next_gpu:
             try:
                 if nvidia:
-                    reply = subprocess.run([nvidia, "--query-gpu=uuid,name,utilization.gpu,memory.used",
+                    reply = subprocess.run([nvidia, "--query-gpu=uuid,name,utilization.gpu",
                                             "--format=csv,noheader,nounits"],
                                            capture_output=True, text=True, check=True, timeout=2)
                     for row in csv.reader(reply.stdout.splitlines()):
-                        uuid, name, utilization, memory = [field.strip() for field in row]
-                        values = readings["gpu"].setdefault(uuid, {"name": name, "provider": "nvidia-smi", "utilization": [], "memory": []})
+                        uuid, name, utilization = [field.strip() for field in row]
+                        values = readings["gpu"].setdefault(uuid, {"name": name, "provider": "nvidia-smi", "utilization": []})
                         if utilization.replace(".", "", 1).isdigit():
                             values["utilization"].append(float(utilization))
-                        if memory.replace(".", "", 1).isdigit():
-                            values["memory"].append(float(memory))
                 else:
                     samples = apple_gpu_samples()
                     if not samples:
                         notes.add("Apple GPU utilization unavailable: IORegistry has no usable counters")
                     for sample in samples:
-                        values = readings["gpu"].setdefault(sample["id"], {"name": sample["name"], "provider": "apple-ioreg", "utilization": [], "memory": []})
+                        values = readings["gpu"].setdefault(sample["id"], {"name": sample["name"], "provider": "apple-ioreg", "utilization": []})
                         values["utilization"].append(sample["utilization"])
             except (OSError, ValueError, subprocess.SubprocessError) as error:
                 notes.add(f"GPU counters unavailable: {error}")

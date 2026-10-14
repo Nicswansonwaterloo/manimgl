@@ -12,6 +12,25 @@ from benchmarks.support import reporting, telemetry
 
 
 class RunnerTests(unittest.TestCase):
+    def test_main_runs_each_scene_twice_consecutively(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            args = argparse.Namespace(compare=None, scene_file=Path("unused.py"), only=None,
+                                      list=False, output=Path(temporary) / "results",
+                                      resolution="640x360", fps=15, compile_video=False)
+            scenes = [{"name": "A"}, {"name": "B"}]
+            calls = []
+            def fake_run(scene, iteration, *args):
+                calls.append((scene["name"], iteration))
+                return {"name": scene["name"], "status": "ok"}
+            with patch.object(run, "parse_args", return_value=args), \
+                 patch.object(run, "discover", return_value=scenes), \
+                 patch.object(run, "make_report", return_value={"runs": [], "interrupted": False}), \
+                 patch.object(run, "run_one", side_effect=fake_run), \
+                 patch.object(run, "save_report"), patch.object(run, "print_results"), \
+                 patch.object(run, "CONSOLE"):
+                self.assertEqual(run.main(), 0)
+            self.assertEqual(calls, [("A", 1), ("A", 2), ("B", 1), ("B", 2)])
+
     def test_thirty_five_distinct_workloads(self):
         scenes = run.discover()
         self.assertEqual(len(scenes), 35)
@@ -23,15 +42,13 @@ class RunnerTests(unittest.TestCase):
         self.assertFalse({"GeometryGrid", "PathMorphs", "UpdaterGrid", "SVGPaths", "ImageTiles"}
                          & {s["name"] for s in scenes})
 
-    def test_summary_excludes_failed_measurements(self):
-        def invocation(seconds, status="ok"):
-            return {"name": "Case", "status": status,
-                    **dict.fromkeys(["wall_seconds", "render_seconds", "render_fps", "cpu_percent",
-                                     "tree_peak_mib", "worker_peak_mib"], seconds)}
-        summary = reporting.summarize([invocation(2), invocation(4), invocation(99, "failed")])[0]
-        self.assertEqual(summary["wall_seconds"], 3)
-        self.assertEqual(summary["passed"], 2)
-        self.assertEqual(summary["failed"], 1)
+    def test_summary_keeps_first_and_cached_separate(self):
+        rows = reporting.summarize([
+            {"name": "Case", "phase": "first", "status": "ok", "wall_seconds": 10},
+            {"name": "Case", "phase": "cached", "status": "ok", "wall_seconds": 2},
+        ])
+        self.assertEqual([row["wall_seconds"] for row in rows], [10, 2])
+        self.assertEqual([row["phase"] for row in rows], ["first", "cached"])
 
     def test_builtin_example_discovery(self):
         scenes = run.discover(run.ROOT / "example_scenes.py")
@@ -39,17 +56,12 @@ class RunnerTests(unittest.TestCase):
                         <= {scene["name"] for scene in scenes})
         self.assertTrue(all(Path(scene["file"]).is_absolute() for scene in scenes))
 
-    def test_gpu_summary_does_not_confirm_missing_or_failed_evidence(self):
-        def invocation(confirmed, status="ok"):
-            return {"name": "Case", "status": status, "adapter": {"backend_type": "Metal"},
-                    "gpu_rendering": {"hardware_rendering_confirmed": confirmed},
-                    "gpu_render_passes": 100, "gpu_pass_mean_ms": 0.25}
-        row = reporting.summarize([invocation(True), invocation(False, "failed")])[0]
-        self.assertTrue(row["gpu_confirmed"])
-        self.assertEqual(row["backend"], "Metal")
-        self.assertEqual(row["gpu_pass_mean_ms"], 0.25)
-        row = reporting.summarize([invocation(True), invocation(False)])[0]
-        self.assertFalse(row["gpu_confirmed"])
+    def test_gpu_summary_preserves_unavailable_and_excludes_failures(self):
+        rows = reporting.summarize([
+            {"name": "Case", "phase": "first", "status": "ok", "device_gpu_utilization_percent": None},
+            {"name": "Case", "phase": "cached", "status": "failed", "device_gpu_utilization_percent": 99},
+        ])
+        self.assertTrue(all(row["device_gpu_utilization_percent"] is None for row in rows))
 
     def test_apple_telemetry_skips_missing_and_invalid_counters(self):
         import plistlib

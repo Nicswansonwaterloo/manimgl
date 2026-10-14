@@ -3,12 +3,13 @@ from benchmarks.support.algorithms import breadth_first_events
 
 
 class BreadthFirstSearchGraph(Scene):
-    """15s: real FIFO traversal of 512 nodes, live queue, 1,064 deforming edges and shortest path."""
+    """15s: real FIFO traversal of 336 nodes, live queue, 690 deforming edges and shortest path."""
     default_camera_config = dict(background_color="#101C2B")
 
     def construct(self):
-        rows, cols = 16, 32
-        homes = np.array([[(col - 15.5) * 0.29 - 1.2, (row - 7.5) * 0.34, 0]
+        rows, cols = 14, 24
+        homes = np.array([[(col / (cols - 1) - 0.5) * 8.99 - 1.2,
+                           (row / (rows - 1) - 0.5) * 5.1, 0]
                           for row in range(rows) for col in range(cols)])
         pairs = [(r * cols + c, r * cols + c + 1) for r in range(rows) for c in range(cols - 1)]
         pairs += [(r * cols + c, (r + 1) * cols + c) for r in range(rows - 1) for c in range(cols)]
@@ -20,12 +21,12 @@ class BreadthFirstSearchGraph(Scene):
             adjacency[a].append(b)
             adjacency[b].append(a)
             edge_index[min(a, b), max(a, b)] = index
-        start, goal = 7 * cols, 8 * cols + cols - 1
+        start, goal = (rows // 2 - 1) * cols, (rows // 2) * cols + cols - 1
         events, parents, distances = breadth_first_events(adjacency, start)
         edges = VGroup(*[Line(homes[a], homes[b], stroke_color=GREY_D, stroke_width=1)
                          for a, b in pairs])
         nodes = VGroup(*[Dot(point, radius=0.035, color=GREY_B) for point in homes])
-        title = Text("BREADTH-FIRST SEARCH · 512 nodes", font="sans-serif", font_size=26).to_edge(UP)
+        title = Text(f"BREADTH-FIRST SEARCH · {len(homes)} nodes", font="sans-serif", font_size=26).to_edge(UP)
         panel_title = Text("FIFO frontier", font="sans-serif", font_size=24).move_to([5.2, 2.5, 0])
         queue_digits = VGroup(*[Integer(0, font_size=19, color=TEAL).move_to([5.2, 1.9 - i * 0.3, 0])
                                for i in range(10)])
