@@ -276,17 +276,21 @@ class VMobject(Mobject):
         gradient_direction. Anything more than two of either is cut down to two.
         """
         set_colors = color is not None or opacity is not None
+        if color is not None:
+            rgbs = [color_to_rgb(c) for c in listify(color)[:2]]
+        if opacity is not None:
+            ops = listify(opacity)[:2]
         for mob in self.get_family(recurse):
             if set_colors:
-                ends = np.array([mob.uniforms["fill_rgba"], mob.uniforms["fill_rgba_end"]])
+                start = mob.uniforms["fill_rgba"]
+                end = mob.uniforms["fill_rgba_end"]
                 if color is not None:
-                    rgbs = np.array([color_to_rgb(c) for c in listify(color)[:2]])
-                    ends[:, :3] = rgbs if len(rgbs) == 2 else rgbs[0]
+                    start[:3] = rgbs[0]
+                    end[:3] = rgbs[-1]
                 if opacity is not None:
-                    ops = np.array(listify(opacity)[:2], dtype=float)
-                    ends[:, 3] = ops if len(ops) == 2 else ops[0]
-                mob.uniforms["fill_rgba"] = ends[0]
-                mob.uniforms["fill_rgba_end"] = ends[1]
+                    start[3] = ops[0]
+                    end[3] = ops[-1]
+                mob.uniforms.note_change()
             if border_width is not None:
                 mob.uniforms["fill_border_width"] = float(border_width)
         if gradient_direction is not None or (set_colors and self.has_fill_gradient()):

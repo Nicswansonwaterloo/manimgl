@@ -8,6 +8,35 @@ from manimlib.mobject.mobject import Mobject
 from manimlib.mobject.types.vectorized_mobject import VGroup
 
 
+class FillColorTests(unittest.TestCase):
+    def test_partial_updates_preserve_other_components(self):
+        square = Square().set_fill(["#ff0000", "#0000ff"], [0.2, 0.8])
+        version = square.uniforms.version
+        square.set_fill(opacity=0.5)
+        np.testing.assert_allclose(square.uniforms["fill_rgba"], [1, 0, 0, 0.5])
+        np.testing.assert_allclose(square.uniforms["fill_rgba_end"], [0, 0, 1, 0.5])
+        self.assertGreater(square.uniforms.version, version)
+        square.set_fill("#00ff00")
+        for name in ("fill_rgba", "fill_rgba_end"):
+            np.testing.assert_allclose(square.uniforms[name], [0, 1, 0, 0.5])
+
+    def test_family_updates_keep_individual_opacities(self):
+        squares = VGroup(Square().set_fill(opacity=0.2), Square().set_fill(opacity=0.8))
+        squares.set_fill(["#ff0000", "#0000ff", "#00ff00"])
+        for square, opacity in zip(squares, [0.2, 0.8]):
+            np.testing.assert_allclose(square.uniforms["fill_rgba"], [1, 0, 0, opacity])
+            np.testing.assert_allclose(square.uniforms["fill_rgba_end"], [0, 0, 1, opacity])
+        squares.set_fill("#00ff00", recurse=False)
+        np.testing.assert_allclose(squares[0].uniforms["fill_rgba"][:3], [1, 0, 0])
+
+    def test_gradient_points_follow_explicit_direction(self):
+        square = Square().set_fill("#ffffff", [0.1, 0.9, 0.4], gradient_direction=[0, 1, 0])
+        np.testing.assert_allclose(square.uniforms["gradient_start"], [0, -1, 0])
+        np.testing.assert_allclose(square.uniforms["gradient_end"], [0, 1, 0])
+        self.assertAlmostEqual(float(square.uniforms["fill_rgba"][3]), 0.1)
+        self.assertAlmostEqual(float(square.uniforms["fill_rgba_end"][3]), 0.9)
+
+
 class LineEndpointTests(unittest.TestCase):
     def test_endpoints_style_and_parent_bounds(self):
         line = Line().set_stroke(width=[1, 4, 2], opacity=[0.2, 0.5, 0.8])
