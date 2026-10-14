@@ -27,6 +27,8 @@ class RunnerTests(unittest.TestCase):
                  patch.object(run, "make_report", return_value={"runs": [], "interrupted": False}), \
                  patch.object(run, "run_one", side_effect=fake_run), \
                  patch.object(run, "save_report"), patch.object(run, "print_results"), \
+                 patch("benchmarks.support.visual.load_reference", return_value=(Path(temporary), {})), \
+                 patch("benchmarks.support.visual.validate_suite", return_value=True), \
                  patch.object(run, "CONSOLE"):
                 self.assertEqual(run.main(), 0)
             self.assertEqual(calls, [("A", 1), ("A", 2), ("B", 1), ("B", 2)])

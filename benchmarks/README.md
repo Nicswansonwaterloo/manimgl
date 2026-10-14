@@ -1,6 +1,6 @@
 # Render benchmarks
 
-35 deterministic scenes: 30 short workloads (~4 seconds) and five involved workloads (~15 seconds). Defaults are **854×480, 15 fps, one scene/process at a time**. Each scene renders exactly twice consecutively: a first run with a fresh scene disk cache, then a cached repeat in a new process. There is no repeat parameter. Every render includes movie encoding; individual movies, generated inputs and caches are temporary and automatically deleted.
+35 deterministic scenes: 30 short workloads (~4 seconds) and five involved workloads (~15 seconds). Defaults are **854×480, 15 fps, one scene/process at a time**. Each scene renders exactly twice consecutively: a first run with a fresh scene disk cache, then a cached repeat in a new process. There is no repeat parameter. Every render includes movie encoding. Both scene movies are retained for visual validation; generated inputs and caches are temporary.
 
 Run these commands from the repository root with the `manimgl` Conda environment. Install the small runner dependency if needed:
 
@@ -11,8 +11,11 @@ conda run --no-capture-output -n manimgl python -m pip install -r benchmarks/req
 ## Run
 
 ```sh
-# All scenes; first run and cached repeat
-conda run --no-capture-output -n manimgl python benchmarks/run.py --output benchmarks/results/baseline
+# Once: create the visual baseline (then watch its videos to approve the reference)
+conda run --no-capture-output -n manimgl python benchmarks/run.py --baseline
+
+# After a code change: benchmark and automatically validate against that baseline
+conda run --no-capture-output -n manimgl python benchmarks/run.py
 
 # List scenes, or select a subset (quoted name globs also work)
 conda run --no-capture-output -n manimgl python benchmarks/run.py --list
@@ -31,13 +34,16 @@ results.json     Full measurements, settings, scene fingerprint, Git revision/st
 summary.csv      Separate first/cached measurements and statuses
 logs/            One renderer/encoder log per invocation
 suite.mp4        Only when --compile-video was requested and every scene succeeded
+videos/          Both movies for each successfully rendered scene
+validation.json  Frame, duration and visual validation results
+visual-diffs/    Failure details and worst-frame reference/candidate/amplified diff PNGs
 ```
 
 Interrupted runs retain completed measurements. Failed renders remain in the reports and logs and have unavailable summary timings; failures/timeouts exit nonzero, Ctrl+C exits 130. Temporary data is cleaned in all of those cases. There are no persistent benchmark input or compilation caches. Directly previewing a scene outside the runner can generate inputs in `benchmarks/_generated/`.
 
 ## Compare repository changes
 
-Start a fresh baseline at 854×480 and 15 fps. Earlier 1080p/60fps results are historical references, not comparable baselines; the comparison tool rejects mismatched resolution, FPS or scene fingerprints. The reduced SpringMesh and BFS workloads also require a fresh baseline.
+The visual baseline lives in `benchmarks/results/visual-baseline`. Existing timing-only results are preserved, but cannot validate images. The baseline command refuses to overwrite an existing visual baseline; move that directory aside to replace it deliberately.
 
 1. Run the baseline command above **before** changing the repository.
 2. Make your changes. Keep benchmark sources and render settings fixed.
@@ -45,14 +51,26 @@ Start a fresh baseline at 854×480 and 15 fps. Earlier 1080p/60fps results are h
 
 ```sh
 conda run --no-capture-output -n manimgl python benchmarks/run.py --output benchmarks/results/candidate
-conda run --no-capture-output -n manimgl python benchmarks/run.py --compare benchmarks/results/baseline benchmarks/results/candidate
+conda run --no-capture-output -n manimgl python benchmarks/run.py --compare benchmarks/results/visual-baseline benchmarks/results/candidate
 ```
 
 The comparison reports scene execution and wall-time changes separately for each phase. **Negative percentages mean faster; positive mean slower.** It refuses mismatched scene fingerprints, resolution, FPS and encoding, omits percentages for failed/incomplete scenes, and warns about changed environment, configuration or GPU identity. Either directory paths or `results.json` paths are accepted. No rendering happens during comparison.
 
 Use the same machine, power mode, background workload, dependency versions and scene selection/order. Each scene gets isolated Text/TeX/Matplotlib disk cache paths shared by its two invocations and deleted after the suite. OS and driver caches are not flushed, and process-local caches do not survive the restart. The cached repeat measures reuse of available disk caches, not a guaranteed fully warm GPU. Check another suite before treating a small change as a regression. Different Git revisions are expected; benchmark sources should stay unchanged.
 
-The final output contains two tables: **First run** and **Cached repeat**. Both include status, wall time, render time, FPS, CPU usage, process-tree memory and GPU utilization. Results are never averaged across the two phases. GPU N/A means unavailable. The new report format rejects older combined-result reports.
+The final output contains one table with first-run wall time, **Cached wall s**, first-run render time and FPS. CPU usage, GPU utilization and process-tree memory are arithmetic averages of the two runs (memory averages their sampled peaks). An average is unavailable if either run failed or lacks the measurement. Status is `ok` when both renders succeed; otherwise it shows first/cached statuses. Saved JSON/CSV measurements remain separate by phase for timing comparisons and validation. GPU N/A means unavailable.
+
+## Automatic visual correctness checks
+
+Normal runs require a compatible visual baseline and validate both phases automatically. `--only` can validate a subset against the full reference. Resolution, FPS, encoder settings, configuration and selected scene fingerprints must match. Baseline video checksums detect changed or missing reference files. Render failures and visual failures both produce a nonzero exit status.
+
+All decoding, comparison and tolerance calibration happens **after the complete timed render suite**. Timings include normal movie encoding, but exclude movie retention and validation. Every decoded frame is checked at the same frame index; frames are never resized or realigned to hide changes. Checks cover dimensions, exact frame counts, playback rate, timestamp cadence and duration. Candidate frame counts and durations must match their reference phase. Worker frame counts must also match decoded counts.
+
+Tolerances are automatic, with no CLI tuning required. RGB differences up to 12 levels per channel are treated as small pixel noise. A frame initially allows at most 0.1% of pixels beyond that tolerance and a mean absolute RGB error of 0.5 on the 0–255 scale. The baseline's first/cached comparison calibrates those two limits per scene to 1.5 times observed variation, never below the defaults or above 0.5% changed pixels and 1.5 mean error. Larger variation rejects the baseline as insufficiently repeatable. Candidates cannot loosen the saved thresholds. Timestamp/duration tolerance is 1 ms; comparison with scene animation time allows one frame of rounding.
+
+These are bounded pixel-error checks, not a semantic proof of correctness. Review the reference videos before treating them as authoritative. An intentional appearance change requires review and a new baseline. Video compression and driver differences can cause flagged changes, which should be reviewed rather than automatically accepted.
+
+On a visual mismatch, all failing frame indices and scores are recorded, and the worst failing frame per scene/phase gets reference, candidate and 4× amplified difference PNGs. Missing frames retain the available image; decode/render failures may have only `failure.json` because no valid image exists. Full videos remain available for inspecting every failure. The timing table remains separate from the final visual PASS/FAIL line; saved timing comparisons suppress improvement percentages for phases that failed visual checks.
 
 ## Reading the numbers
 

@@ -29,6 +29,10 @@ def make_report(args, scenes, root, timestamp):
         digest.update(Path(scene["file"]).read_bytes())
     for name in ["algorithms.py", "assets.py"]:
         digest.update((Path(__file__).parent / name).read_bytes())
+    helpers = b"".join((Path(__file__).parent / name).read_bytes()
+                       for name in ["algorithms.py", "assets.py"])
+    scene_hashes = {scene["name"]: hashlib.sha256(Path(scene["file"]).read_bytes() + helpers).hexdigest()
+                    for scene in scenes}
     versions = {}
     for name in ["manimgl", "wgpu", "numpy", "av", "psutil"]:
         try:
@@ -44,6 +48,7 @@ def make_report(args, scenes, root, timestamp):
         "resolution": args.resolution, "fps": args.fps, "phases": ["first", "cached"],
         "encoding": {"codec": "libx264", "pixel_format": "yuv420p", "crf": 23},
         "scenes": scenes, "workload_sha256": digest.hexdigest(),
+        "scene_sha256": scene_hashes,
         "repository": {"commit": git("rev-parse", "HEAD"), "status": git("status", "--porcelain")},
         "environment": {"platform": platform.platform(), "python": sys.version, "packages": versions},
         "config_sha256": config_hash.hexdigest(), "runs": [], "interrupted": False,
@@ -67,7 +72,9 @@ def comparison_rows(baseline, candidate):
         previous = old.get((current["name"], current["phase"]))
         if previous is None:
             raise ValueError(f"Baseline has no result for {current['name']}")
-        complete = previous["status"] == current["status"] == "ok"
+        complete = (previous["status"] == current["status"] == "ok"
+                    and previous.get("visual_passed") is not False
+                    and current.get("visual_passed") is not False)
         def change(field):
             before, after = previous[field], current[field]
             return 100 * (after / before - 1) if complete and before and after is not None else None
@@ -101,13 +108,14 @@ def compare(baseline_path, candidate_path):
                  ["baseline_seconds", "candidate_seconds", "render_change_percent", "wall_change_percent"]]
         table.add_row(row["name"], row["phase"], *cells)
     CONSOLE.print(table)
-    CONSOLE.print("Negative = faster; positive = slower. Failed/incomplete scenes have no percentage.")
+    CONSOLE.print("Negative = faster; positive = slower. Failed renders or visual checks have no percentage.")
 
 
 def summarize(runs):
     fields = ["wall_seconds", "render_seconds", "render_fps", "cpu_percent",
               "tree_peak_mib", "worker_peak_mib", "device_gpu_utilization_percent"]
     return [{"name": run["name"], "phase": run["phase"], "status": run["status"],
+             "visual_passed": run.get("visual", {}).get("passed"),
              **{field: run.get(field) if run["status"] == "ok" else None for field in fields}}
             for run in runs]
 
@@ -122,24 +130,41 @@ def save_report(report, output):
             writer.writerows(report["summary"])
 
 
+def display_rows(summary):
+    """Merge phases for display only; preserve per-phase measurements on disk."""
+    grouped = {}
+    for row in summary:
+        grouped.setdefault(row["name"], {})[row["phase"]] = row
+    rows = []
+    for name, phases in grouped.items():
+        first, cached = phases.get("first", {}), phases.get("cached", {})
+        statuses = [phase.get("status", "missing") for phase in (first, cached)]
+        row = {"name": name, "status": "ok" if statuses == ["ok", "ok"] else "/".join(statuses),
+               "wall_seconds": first.get("wall_seconds"),
+               "cached_wall_seconds": cached.get("wall_seconds"),
+               "render_seconds": first.get("render_seconds"), "render_fps": first.get("render_fps")}
+        for field in ("cpu_percent", "tree_peak_mib", "device_gpu_utilization_percent"):
+            values = [phase.get(field) if phase.get("status") == "ok" else None for phase in (first, cached)]
+            row[field] = sum(values) / 2 if all(value is not None for value in values) else None
+        rows.append(row)
+    return rows
+
+
 def print_results(report):
-    for phase, title in [("first", "First run · fresh scene disk cache"),
-                         ("cached", "Cached repeat · reused scene disk cache")]:
-        table = Table(title=title, show_lines=False, padding=(0, 0))
-        for column in ["Scene", "Status", "Wall s", "Render s", "FPS", "CPU %", "Tree MiB", "GPU %"]:
-            table.add_column(column, justify="left" if column in {"Scene", "Status"} else "right", no_wrap=True)
-        for row in report["summary"]:
-            if row["phase"] != phase:
-                continue
-            numbers = [f"{row[field]:.2f}" if row[field] is not None else "—"
-                       for field in ["wall_seconds", "render_seconds", "render_fps", "cpu_percent", "tree_peak_mib"]]
-            utilization = row["device_gpu_utilization_percent"]
-            table.add_row(row["name"], row["status"], *numbers,
-                          f"{utilization:.1f}" if utilization is not None else "N/A",
-                          style="red" if row["status"] != "ok" else None)
-        CONSOLE.print(table)
+    table = Table(title="Render benchmark results", show_lines=False, padding=(0, 0))
+    for column in ["Scene", "Status", "Wall s", "Cached wall s", "Render s", "FPS", "CPU %", "Tree MiB", "GPU %"]:
+        table.add_column(column, justify="left" if column in {"Scene", "Status"} else "right", no_wrap=True)
+    for row in display_rows(report["summary"]):
+        numbers = [f"{row[field]:.2f}" if row[field] is not None else "—"
+                   for field in ["wall_seconds", "cached_wall_seconds", "render_seconds", "render_fps", "cpu_percent", "tree_peak_mib"]]
+        utilization = row["device_gpu_utilization_percent"]
+        table.add_row(row["name"], row["status"], *numbers,
+                      f"{utilization:.1f}" if utilization is not None else "N/A",
+                      style="red" if row["status"] != "ok" else None)
+    CONSOLE.print(table)
+    CONSOLE.print("[dim]Wall/Render/FPS = first run; Cached wall = second run. CPU/GPU/memory = average of both runs; unavailable if either is missing.[/dim]")
     CONSOLE.print("[dim]GPU % is device-wide and includes other apps; N/A = unavailable. OS/driver caches are not reset.[/dim]")
-    CONSOLE.print("[dim]CPU 100% = one logical core · Tree MiB = sampled peak process-tree RSS[/dim]")
+    CONSOLE.print("[dim]CPU 100% = one logical core · Tree MiB = average of the two sampled process-tree RSS peaks[/dim]")
     passed = sum(r["status"] == "ok" for r in report["runs"])
     minutes, seconds = divmod(round(sum(r["wall_seconds"] for r in report["runs"])), 60)
     CONSOLE.print(f"\n[bold]{passed}/{len(report['runs'])} renders passed[/bold] · "

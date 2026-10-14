@@ -11,16 +11,36 @@ from unittest.mock import patch
 
 
 class ReportingTests(unittest.TestCase):
-    def test_two_tables_include_gpu_and_total_uses_minutes_seconds(self):
+    def test_single_table_includes_cached_wall_gpu_and_total_minutes_seconds(self):
         runs = [{"name": "Case", "phase": phase, "status": "ok", "wall_seconds": 61.4}
                 for phase in ("first", "cached")]
         with patch.object(reporting, "CONSOLE") as console:
             reporting.print_results({"runs": runs, "summary": reporting.summarize(runs)})
         tables = [call.args[0] for call in console.print.call_args_list
                   if isinstance(call.args[0], reporting.Table)]
-        self.assertEqual(len(tables), 2)
+        self.assertEqual(len(tables), 1)
+        self.assertIn("Cached wall s", [c.header for c in tables[0].columns])
         self.assertTrue(all("GPU %" in [c.header for c in table.columns] for table in tables))
         self.assertIn("2m 03s", console.print.call_args.args[0])
+
+    def test_display_averages_resources_but_preserves_separate_timings(self):
+        runs = [{"name": "Case", "phase": phase, "status": "ok", "wall_seconds": seconds,
+                 "render_seconds": seconds - 1, "render_fps": seconds,
+                 "cpu_percent": seconds * 10, "tree_peak_mib": seconds * 100,
+                 "device_gpu_utilization_percent": seconds}
+                for phase, seconds in [("first", 10), ("cached", 4)]]
+        summary = reporting.summarize(runs)
+        row = reporting.display_rows(summary)[0]
+        self.assertEqual((row["wall_seconds"], row["cached_wall_seconds"]), (10, 4))
+        self.assertEqual((row["render_seconds"], row["render_fps"]), (9, 10))
+        self.assertEqual((row["cpu_percent"], row["tree_peak_mib"], row["device_gpu_utilization_percent"]), (70, 700, 7))
+        self.assertEqual(summary[0]["cpu_percent"], 100)
+        summary[1]["device_gpu_utilization_percent"] = None
+        self.assertIsNone(reporting.display_rows(summary)[0]["device_gpu_utilization_percent"])
+        summary[1]["status"] = "failed"
+        row = reporting.display_rows(summary)[0]
+        self.assertEqual(row["status"], "ok/failed")
+        self.assertIsNone(row["cpu_percent"])
 
     def report(self, seconds=10):
         return {"schema_version": 6, "resolution": "1920x1080", "fps": 60,

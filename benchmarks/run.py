@@ -65,7 +65,11 @@ def parse_args():
     parser.add_argument("--timeout", type=positive_int, default=300, help="seconds per scene")
     parser.add_argument("--output", type=Path, help="new directory for JSON, CSV and logs")
     parser.add_argument("--compile-video", action="store_true", help="keep suite.mp4 inside the result directory")
+    parser.add_argument("--baseline", action="store_true",
+                        help="create the visual reference; subsequent normal runs check it automatically")
     args = parser.parse_args()
+    if args.baseline and (args.compare or args.output or args.only or args.scene_file):
+        parser.error("--baseline creates the complete built-in suite at its standard location; use it on its own")
     try:
         width, height = map(int, args.resolution.split("x"))
         if min(width, height) < 2 or width % 2 or height % 2:
@@ -136,7 +140,7 @@ def run_one(scene, iteration, args, output, scratch, retained_clip=None):
                    and movie.exists() and movie.stat().st_size > 0)
         size = movie.stat().st_size if movie.exists() else 0
         if success and retained_clip:
-            shutil.copyfile(movie, retained_clip)  # Outside measured time; removed after concatenation.
+            shutil.copyfile(movie, retained_clip)  # Outside measured time.
     gpu = [{"id": uuid, "uuid": uuid if values["provider"] == "nvidia-smi" else None,
             "name": values["name"], "provider": values["provider"], "scope": "device-wide",
             "samples": len(values["utilization"]),
@@ -198,13 +202,25 @@ def main():
             CONSOLE.print(f"{scene['name']:27} {scene['description']}")
         return 0
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
-    output = (args.output or HERE / "results" / timestamp).resolve()
+    visual_baseline = getattr(args, "baseline", False)
+    baseline_path = HERE / "results" / "visual-baseline"
+    output = (baseline_path if visual_baseline else args.output or HERE / "results" / timestamp).resolve()
     report = make_report(args, scenes, ROOT, timestamp)
+    reference = None
+    from benchmarks.support.visual import DEFAULT_TOLERANCES, load_reference, validate_suite
+    tolerances = dict(DEFAULT_TOLERANCES)
+    if not visual_baseline:
+        # Fail before rendering if this isn't a compatible, intact reference.
+        reference = load_reference(baseline_path, report)
+    elif output.exists():
+        raise ValueError("A visual baseline already exists. Move it aside before creating a replacement.")
     output.mkdir(parents=True, exist_ok=False)
     (output / "logs").mkdir()
+    (output / "videos").mkdir()
     CONSOLE.rule("[bold cyan]ManimGL Render Benchmark")
     CONSOLE.print(f"[bold]{args.resolution} · {args.fps} fps · {len(scenes)} scenes · first run + cached repeat[/bold]\n"
                   "One renderer at a time · movie encoding included · temporary data deleted")
+    CONSOLE.print("Both scene movies retained · visual checks run after all timed renders")
     clips = {}
     failed = False
     with tempfile.TemporaryDirectory(prefix="manim-benchmark-") as temporary:
@@ -214,16 +230,22 @@ def main():
                 prepare_assets(scratch / "assets")
             for number, scene in enumerate(scenes, 1):
                 for iteration in (1, 2):
-                    clip = scratch / f"{number:02d}-{scene['name']}.mp4" if args.compile_video and scene["name"] not in clips else None
+                    clip = output / "videos" / f"{scene['name']}-{iteration:02d}.mp4"
                     phase_label = "first run" if iteration == 1 else "cached repeat"
                     with CONSOLE.status(f"[{number}/{len(scenes)}] {scene['name']} · {phase_label}"):
                         result = run_one(scene, iteration, args, output, scratch, clip)
                     report["runs"].append(result)
+                    if result["status"] == "ok":
+                        result["video"] = str(clip.relative_to(output))
+                        result["movies_deleted"] = False
                     if len(report["runs"]) == 1 and result.get("adapter"):
                         adapter = result["adapter"]
                         CONSOLE.print(f"GPU: {adapter.get('device')} · {adapter.get('backend_type')}")
-                    if result["status"] == "ok" and clip:
-                        clips[scene["name"]] = clip
+                    if args.compile_video and result["status"] == "ok" and scene["name"] not in clips:
+                        # The concat manifest uses filenames in the scratch directory.
+                        join_clip = scratch / f"{number:02d}-{scene['name']}.mp4"
+                        shutil.copyfile(clip, join_clip)
+                        clips[scene["name"]] = join_clip
                     if result["status"] != "ok":
                         CONSOLE.print(f"[red]{scene['name']}: {result['status']}[/red] · {output / result['log']}")
                     save_report(report, output)
@@ -240,6 +262,23 @@ def main():
         finally:
             save_report(report, output)
     print_results(report)
+    if not report["interrupted"]:
+        try:
+            with CONSOLE.status("Checking decoded videos (outside render timings)"):
+                valid = validate_suite(report, output, tolerances, reference)
+            failed = failed or not valid
+            CONSOLE.print(f"Visual {'comparison' if reference else 'reference checks'}: "
+                          f"{'PASS' if valid else 'FAIL'} · {output / 'validation.json'}")
+            for run in report["runs"]:
+                if run.get("visual", {}).get("passed") is False:
+                    CONSOLE.print(f"[red]{run['name']} / {run['phase']}: "
+                                  f"{'; '.join(run['visual']['errors'])}[/red]")
+            if visual_baseline and valid:
+                CONSOLE.print("Review the retained videos before accepting this reference as visually correct.")
+        except KeyboardInterrupt:
+            report["interrupted"] = True
+        finally:
+            save_report(report, output)
     CONSOLE.print(f"Reports: {output}")
     if report.get("video"):
         CONSOLE.print(f"Combined video: {output / report['video']}")
