@@ -139,7 +139,7 @@ def run_one(scene, iteration, args, output, scratch, retained_clip=None):
                    and worker.get("encoder_returncode") == 0 and worker.get("frames_written", 0) > 0
                    and movie.exists() and movie.stat().st_size > 0)
         size = movie.stat().st_size if movie.exists() else 0
-        if success and retained_clip:
+        if movie.exists() and retained_clip:
             shutil.copyfile(movie, retained_clip)  # Outside measured time.
     gpu = [{"id": uuid, "uuid": uuid if values["provider"] == "nvidia-smi" else None,
             "name": values["name"], "provider": values["provider"], "scope": "device-wide",
@@ -216,11 +216,11 @@ def main():
         raise ValueError("A visual baseline already exists. Move it aside before creating a replacement.")
     output.mkdir(parents=True, exist_ok=False)
     (output / "logs").mkdir()
-    (output / "videos").mkdir()
+    (output / "reference-videos").mkdir()
     CONSOLE.rule("[bold cyan]ManimGL Render Benchmark")
     CONSOLE.print(f"[bold]{args.resolution} · {args.fps} fps · {len(scenes)} scenes · first run + cached repeat[/bold]\n"
                   "One renderer at a time · movie encoding included · temporary data deleted")
-    CONSOLE.print("Both scene movies retained · visual checks run after all timed renders")
+    CONSOLE.print("Visual checks run after timed renders · successful candidate videos/logs are deleted")
     clips = {}
     failed = False
     with tempfile.TemporaryDirectory(prefix="manim-benchmark-") as temporary:
@@ -230,12 +230,12 @@ def main():
                 prepare_assets(scratch / "assets")
             for number, scene in enumerate(scenes, 1):
                 for iteration in (1, 2):
-                    clip = output / "videos" / f"{scene['name']}-{iteration:02d}.mp4"
+                    clip = output / "reference-videos" / f"{scene['name']}-{iteration:02d}.mp4"
                     phase_label = "first run" if iteration == 1 else "cached repeat"
                     with CONSOLE.status(f"[{number}/{len(scenes)}] {scene['name']} · {phase_label}"):
                         result = run_one(scene, iteration, args, output, scratch, clip)
                     report["runs"].append(result)
-                    if result["status"] == "ok":
+                    if clip.exists():
                         result["video"] = str(clip.relative_to(output))
                         result["movies_deleted"] = False
                     if len(report["runs"]) == 1 and result.get("adapter"):
@@ -266,6 +266,9 @@ def main():
         try:
             with CONSOLE.status("Checking decoded videos (outside render timings)"):
                 valid = validate_suite(report, output, tolerances, reference)
+            from benchmarks.support.review_videos import prepare_review_videos
+            with CONSOLE.status("Preparing compatible review videos (outside render timings)"):
+                prepare_review_videos(report, output, visual_baseline)
             failed = failed or not valid
             CONSOLE.print(f"Visual {'comparison' if reference else 'reference checks'}: "
                           f"{'PASS' if valid else 'FAIL'} · {output / 'validation.json'}")
@@ -280,11 +283,29 @@ def main():
         finally:
             report["validation_seconds"] = time.perf_counter() - validation_started
             save_report(report, output)
+    clean_successful_artifacts(report, output, visual_baseline)
+    save_report(report, output)
     print_results(report)
     CONSOLE.print(f"Reports: {output}")
     if report.get("video"):
         CONSOLE.print(f"Combined video: {output / report['video']}")
     return 130 if report["interrupted"] else int(failed or any(run["status"] != "ok" for run in report["runs"]))
+
+
+def clean_successful_artifacts(report, output, baseline=False):
+    """Keep reference videos and diagnostics; never discard an unchecked run."""
+    for run in report["runs"]:
+        if run["status"] != "ok" or run.get("visual", {}).get("passed") is not True:
+            continue
+        if run.get("log"):
+            (output / run.pop("log")).unlink(missing_ok=True)
+        if not baseline and run.get("video"):
+            (output / run.pop("video")).unlink(missing_ok=True)
+            run["movies_deleted"] = True
+    for name in ("logs", "videos", "reference-videos"):
+        folder = output / name
+        if folder.is_dir() and not any(folder.iterdir()):
+            folder.rmdir()
 
 
 if __name__ == "__main__":

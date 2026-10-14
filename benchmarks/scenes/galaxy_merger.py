@@ -5,29 +5,31 @@ from benchmarks.support.algorithms import softened_acceleration
 
 
 class GalaxyMergerNBody3D(ThreeDScene):
-    """15s: direct 1,026-body gravity, fixed simulation steps, 32 live trails and orbiting camera."""
+    """15s: direct 718-body gravity, fixed simulation steps, 32 live trails and orbiting camera."""
     default_camera_config = dict(background_color="#030611")
 
     def construct(self):
         rng = np.random.default_rng(1026)
+        per_galaxy = 358
+        star_count = 2 * per_galaxy
         positions, velocities = [], []
         for sign in [-1, 1]:
-            radius = rng.uniform(0.15, 1.65, 512)
-            theta = rng.uniform(0, TAU, 512)
-            disk = np.column_stack([radius * np.cos(theta), radius * np.sin(theta), rng.normal(0, 0.035, 512)])
+            radius = rng.uniform(0.15, 1.65, per_galaxy)
+            theta = rng.uniform(0, TAU, per_galaxy)
+            disk = np.column_stack([radius * np.cos(theta), radius * np.sin(theta), rng.normal(0, 0.035, per_galaxy)])
             speed = np.sqrt(0.15 * 12 / radius)
-            motion = np.column_stack([-speed * np.sin(theta), speed * np.cos(theta), np.zeros(512)])
+            motion = np.column_stack([-speed * np.sin(theta), speed * np.cos(theta), np.zeros(per_galaxy)])
             tilt = rotation_matrix(sign * 25 * DEGREES, RIGHT)
             positions.extend(disk @ tilt.T + [sign * 2.5, 0, 0])
             velocities.extend(motion @ tilt.T + [-sign * 0.22, sign * 0.12, 0])
         positions = np.array([*positions, [-2.5, 0, 0], [2.5, 0, 0]], dtype=float)
         velocities = np.array([*velocities, [0.22, -0.12, 0], [-0.22, 0.12, 0]], dtype=float)
-        masses = np.array([*np.full(1024, 4 / 512), 12, 12])
-        stars = DotCloud(positions[:1024], radius=0.035, color=BLUE)
-        stars.set_rgba_array(np.array([*([color_to_rgba(BLUE)] * 512), *([color_to_rgba(GOLD)] * 512)]))
+        masses = np.array([*np.full(star_count, 4 / per_galaxy), 12, 12])
+        stars = DotCloud(positions[:star_count], radius=0.035, color=BLUE)
+        stars.set_rgba_array(np.array([*([color_to_rgba(BLUE)] * per_galaxy), *([color_to_rgba(GOLD)] * per_galaxy)]))
         cores = DotCloud(positions[-2:], radius=0.075, color=WHITE)
         core_halos = GlowDots(positions[-2:], radius=0.25, color=GOLD)
-        tracked = np.arange(0, 1024, 32)
+        tracked = np.linspace(0, star_count - 1, 32, dtype=int)
         histories = [deque(maxlen=120) for _ in tracked]
         trails = VGroup(*[VMobject(stroke_color=TEAL if i < 16 else GOLD, stroke_width=1,
                                   stroke_opacity=0.6) for i in range(len(tracked))])
@@ -44,7 +46,7 @@ class GalaxyMergerNBody3D(ThreeDScene):
                 state["acceleration"] = softened_acceleration(positions, masses)
                 velocities[:] += 0.5 * step * state["acceleration"]
                 state["accumulator"] -= step
-            stars.set_points(positions[:1024])
+            stars.set_points(positions[:star_count])
             cores.set_points(positions[-2:])
             core_halos.set_points(positions[-2:])
             if dt > 0:

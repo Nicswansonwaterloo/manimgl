@@ -55,6 +55,18 @@ class ReportingTests(unittest.TestCase):
         self.assertAlmostEqual(comparison_rows(baseline, self.report(8))[0]["render_change_percent"], -20)
         self.assertAlmostEqual(comparison_rows(baseline, self.report(12))[0]["render_change_percent"], 20)
 
+    def test_selected_scenes_compare_against_full_baseline(self):
+        baseline, candidate = self.report(), self.report(8)
+        baseline["scenes"].append({"name": "Other"})
+        baseline["summary"] += [{**row, "name": "Other"} for row in baseline["summary"]]
+        baseline["scene_sha256"] = {"Case": "same", "Other": "other"}
+        candidate["scene_sha256"] = {"Case": "same"}
+        candidate["workload_sha256"] = "subset"
+        self.assertEqual(len(comparison_rows(baseline, candidate)), 2)
+        candidate["scene_sha256"]["Case"] = "changed"
+        with self.assertRaisesRegex(ValueError, "workload_sha256"):
+            comparison_rows(baseline, candidate)
+
     def test_different_workloads_or_settings_are_rejected(self):
         baseline = self.report()
         for field, different in [("workload_sha256", "changed"), ("fps", 30),

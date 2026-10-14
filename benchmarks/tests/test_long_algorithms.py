@@ -4,11 +4,22 @@ import unittest
 import numpy as np
 
 from benchmarks.support.algorithms import (
-    breadth_first_events, gray_scott_step, hilbert_points_3d, softened_acceleration,
+    breadth_first_events, gray_scott_step, hilbert_points_3d, hilbert_points_2d, softened_acceleration,
 )
 
 
 class LongAlgorithmTests(unittest.TestCase):
+    def test_2d_hilbert_is_continuous_unique_and_refines_parent_cells(self):
+        for order in range(1, 6):
+            points = hilbert_points_2d(order)
+            self.assertEqual(points.shape, (4**order, 2))
+            self.assertEqual(len(np.unique(points, axis=0)), len(points))
+            np.testing.assert_array_equal(np.abs(np.diff(points, axis=0)).sum(axis=1), 1)
+            if order > 1:
+                parents = (points // 2).reshape(-1, 4, 2)
+                np.testing.assert_array_equal(parents[:, 0], hilbert_points_2d(order - 1))
+                np.testing.assert_array_equal(parents, np.repeat(parents[:, :1], 4, axis=1))
+
     def test_bfs_uses_fifo_and_shortest_distances(self):
         graph = [[1, 2], [0, 3], [0, 3, 4], [1, 2, 5], [2, 5], [3, 4]]
         events, parents, distance = breadth_first_events(graph, 0)

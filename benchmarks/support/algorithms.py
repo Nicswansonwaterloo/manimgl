@@ -30,20 +30,29 @@ def hilbert_points_3d(order):
     Algorithm background and original public-domain construction:
     https://github.com/galtay/hilbertcurve#references
     """
-    if order < 1:
-        raise ValueError("Hilbert order must be positive")
-    distances = np.arange(1 << (3 * order), dtype=np.int64)
-    points = np.zeros((len(distances), 3), dtype=np.int64)
+    return hilbert_points(order, 3)
+
+
+def hilbert_points_2d(order):
+    return hilbert_points(order, 2)
+
+
+def hilbert_points(order, dimensions):
+    """Integer Hilbert lattice sites in 2D or 3D, with adjacent parent cells."""
+    if order < 1 or dimensions not in (2, 3):
+        raise ValueError("Positive order and two or three dimensions required")
+    distances = np.arange(1 << (dimensions * order), dtype=np.int64)
+    points = np.zeros((len(distances), dimensions), dtype=np.int64)
     for bit in range(order):
-        for axis in range(3):
-            points[:, axis] |= ((distances >> (3 * bit + 2 - axis)) & 1) << bit
-    gray_carry = points[:, 2] >> 1
-    points[:, 2] ^= points[:, 1]
-    points[:, 1] ^= points[:, 0]
+        for axis in range(dimensions):
+            points[:, axis] |= ((distances >> (dimensions * bit + dimensions - 1 - axis)) & 1) << bit
+    gray_carry = points[:, -1] >> 1
+    for axis in range(dimensions - 1, 0, -1):
+        points[:, axis] ^= points[:, axis - 1]
     points[:, 0] ^= gray_carry
     for bit in range(1, order):
         mask = (1 << bit) - 1
-        for axis in [2, 1, 0]:
+        for axis in reversed(range(dimensions)):
             invert = (points[:, axis] & (1 << bit)) != 0
             exchange = (points[:, 0] ^ points[:, axis]) & mask
             exchange[invert] = 0

@@ -2,14 +2,16 @@
 from fractions import Fraction
 from pathlib import Path
 import tempfile
+import shutil
 import unittest
 
 import av
 import numpy as np
 
 from benchmarks.support.visual import (
-    DEFAULT_TOLERANCES, compare_video, frame_metrics, inspect_video, validate_suite,
+    DEFAULT_TOLERANCES, checksum, compare_video, frame_metrics, inspect_video, validate_suite,
 )
+from benchmarks.support.review_videos import prepare_review_videos
 
 
 def write_video(path, values, fps=15):
@@ -28,6 +30,24 @@ def write_video(path, values, fps=15):
 
 
 class VisualTests(unittest.TestCase):
+    @unittest.skipUnless(shutil.which("ffmpeg"), "FFmpeg unavailable")
+    def test_review_copy_is_compatible_and_preserves_lossless_reference(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "videos").mkdir()
+            original = root / "videos/Case-01.mp4"
+            write_video(original, [0, 120, 255])
+            digest = checksum(original)
+            run = {"name": "Case", "phase": "first", "video": "videos/Case-01.mp4",
+                   "visual": {"passed": True}}
+            prepare_review_videos({"runs": [run]}, root, baseline=True)
+            self.assertEqual(checksum(root / run["video"]), digest)
+            self.assertEqual(run["video"], "reference-videos/Case-01.mp4")
+            with av.open(str(root / run["preview"])) as movie:
+                frames = list(movie.decode(video=0))
+                self.assertEqual(len(frames), 3)
+                self.assertEqual(frames[0].format.name, "yuv420p")
+
     def test_small_pixel_noise_passes_but_removed_object_fails(self):
         reference = np.zeros((100, 100, 3), np.uint8)
         noisy = reference.copy()

@@ -1,8 +1,8 @@
 # Render benchmarks
 
-35 deterministic scenes: 30 short workloads (~4 seconds) and five involved workloads (~15 seconds). Defaults are **854×480, 15 fps, one scene/process at a time**. Each scene renders exactly twice consecutively: a first run with a fresh scene disk cache, then a cached repeat in a new process. There is no repeat parameter. Every render includes movie encoding. Both scene movies are retained for visual validation; generated inputs and caches are temporary.
+40 deterministic scenes: 35 short workloads (~4 seconds), an 8-second 3D Hilbert refinement and four involved workloads (~15 seconds). Defaults are **854×480, 15 fps, one scene/process at a time**. Each scene renders exactly twice consecutively: a first run with a fresh scene disk cache, then a cached repeat in a new process. There is no repeat parameter. Every render includes movie encoding. Baseline movies are retained as references. Candidate movies and logs are deleted after successful visual validation; failed or unchecked runs retain their diagnostics. Generated inputs and caches are temporary.
 
-Videos use lossless RGB encoding (`libx264rgb`, `rgb24`, CRF 0), preserving rendered RGB pixels for validation. Older lossy baselines are incompatible: preserve the old baseline directory and generate a new one with `--baseline`.
+Validation references use lossless RGB encoding (`libx264rgb`, `rgb24`, CRF 0), preserving rendered RGB pixels. These files live in `reference-videos/` and may display incorrectly in players without RGB H.264 support. Watch the conventional H.264 copies in `videos/` instead: one per baseline scene, plus copies of failing candidate phases. Review copies are made after timed rendering and never used for pixel comparisons. Older lossy baselines are incompatible: preserve the old baseline directory and generate a new one with `--baseline`.
 
 Run these commands from the repository root with the `manimgl` Conda environment. Install the small runner dependency if needed:
 
@@ -34,9 +34,10 @@ Each result directory contains only:
 ```text
 results.json     Full measurements, settings, scene fingerprint, Git revision/status and environment
 summary.csv      Separate first/cached measurements and statuses
-logs/            One renderer/encoder log per invocation
+logs/            Logs for failed or unchecked invocations only
 suite.mp4        Only when --compile-video was requested and every scene succeeded
-videos/          Both movies for each successfully rendered scene
+reference-videos/ Lossless baseline movies, or failed/unchecked candidate movies
+videos/          Compatible review copies for baseline scenes and failures
 validation.json  Frame, duration and visual validation results
 visual-diffs/    Failure details and worst-frame reference/candidate/amplified diff PNGs
 ```
@@ -60,7 +61,7 @@ The comparison reports scene execution and wall-time changes separately for each
 
 Use the same machine, power mode, background workload, dependency versions and scene selection/order. Each scene gets isolated Text/TeX/Matplotlib disk cache paths shared by its two invocations and deleted after the suite. OS and driver caches are not flushed, and process-local caches do not survive the restart. The cached repeat measures reuse of available disk caches, not a guaranteed fully warm GPU. Check another suite before treating a small change as a regression. Different Git revisions are expected; benchmark sources should stay unchanged.
 
-The final output contains one table with first-run wall time, **Cached wall s**, first-run render time and FPS. CPU usage, GPU utilization and process-tree memory are arithmetic averages of the two runs (memory averages their sampled peaks). An average is unavailable if either run failed or lacks the measurement. Status is `ok` when both renders succeed; otherwise it shows first/cached statuses. Saved JSON/CSV measurements remain separate by phase for timing comparisons and validation. GPU N/A means unavailable.
+The final output contains one table with first-run wall time, **Cached wall s**, first-run render time and FPS. CPU usage, GPU utilization and process-tree memory are arithmetic averages of the two runs (memory averages their sampled peaks). An average is unavailable if either run failed or lacks the measurement. Scene names are green only when both phases render and validate successfully, and red otherwise; there is no status column. FPS, CPU %, GPU % and Tree MiB display rounded integers. Saved JSON/CSV measurements remain separate by phase for timing comparisons and validation. GPU N/A means unavailable.
 
 ## Automatic visual correctness checks
 
@@ -72,11 +73,11 @@ Tolerances are automatic, with no CLI tuning required. RGB differences up to 12 
 
 These are bounded pixel-error checks, not a semantic proof of correctness. Review the reference videos before treating them as authoritative. An intentional appearance change requires review and a new baseline. Video compression and driver differences can cause flagged changes, which should be reviewed rather than automatically accepted.
 
-On a visual mismatch, all failing frame indices and scores are recorded, and the worst failing frame per scene/phase gets reference, candidate and 4× amplified difference PNGs. Missing frames retain the available image; decode/render failures may have only `failure.json` because no valid image exists. Full videos remain available for inspecting every failure. The timing table remains separate from the final visual PASS/FAIL line; saved timing comparisons suppress improvement percentages for phases that failed visual checks.
+On a visual mismatch, all failing frame indices and scores are recorded, and the worst failing frame per scene/phase gets reference, candidate and 4× amplified difference PNGs. Missing frames retain the available image; decode/render failures may have only `failure.json` because no valid image exists. Failed/unchecked candidate videos remain available for inspection; successful candidate videos and logs are removed after validation. Baseline videos are always retained, but successful baseline logs are removed. The timing table remains separate from the final visual PASS/FAIL line; saved timing comparisons suppress improvement percentages for phases that failed visual checks.
 
 ## Reading the numbers
 
-- **Final timing totals**: video-generation time sums the measured wall times of both renders per scene (including process startup and encoding). Validation time measures the post-render checks, calibration/comparison and saved visual diffs. Both display minutes and seconds and are saved separately in `results.json`. Setup, video copying, optional suite-video joining and reference preflight checks are outside these totals.
+- **Final timing totals**: video-generation time sums the measured wall times of both renders per scene (including process startup and encoding). Validation time measures the post-render checks, calibration/comparison, saved visual diffs and compatible review-copy generation. Both display minutes and seconds and are saved separately in `results.json`. Setup, lossless file copying, optional suite-video joining and reference preflight checks are outside these totals.
 - **Render s / FPS**: `Scene.run()` time and emitted frames divided by that time, including setup, object creation, updates, GPU readback and encoder drain. Playback FPS is a separate setting. This is generally the best starting point for renderer changes.
 - **Wall s**: startup/imports, device initialization, scene execution and process exit (up to ~50 ms of process-wait polling delay). Import and camera-init times are also recorded in JSON.
 - **CPU %**: renderer plus waited-for encoder CPU time on Unix; 100% is one logical core. **Tree MiB**: peak sampled renderer-plus-descendant RSS at 100 ms intervals; shared pages may be double-counted and brief peaks missed. Worker-only OS peak RSS is also saved. Neither is GPU memory.
@@ -93,10 +94,12 @@ The long workloads are:
 | Scene | Workload |
 | --- | --- |
 | `BreadthFirstSearchGraph` | Real FIFO BFS over 336 nodes / 690 deforming edges, live queue and reconstructed shortest path |
-| `HilbertSpaceFilling3D` | Orders 2–6, 262,144 face-adjacent sites, 4,096 colored stroke chunks, refinement transforms and camera orbit |
+| `HilbertSpaceFilling3D` | Orders 1–4, 4,096 face-adjacent sites, 32 rainbow paths, progressive drawing, curved refinement transforms and camera orbit |
 | `ClothWindSimulation3D` | 4,617 constrained particles, wind/gravity/contact, deforming texture, 138 wire paths and 513 shaded beads |
-| `GalaxyMergerNBody3D` | 1,026 bodies, direct all-pairs gravity, 120 Hz velocity-Verlet integration and 32 history trails |
+| `GalaxyMergerNBody3D` | 718 bodies, direct all-pairs gravity, 120 Hz velocity-Verlet integration and 32 history trails |
 | `ReactionDiffusionLaboratory` | Two-species PDE, 10,240 simulation cells, 2,560 vector tiles and evolving concentration profiles |
+
+The five additional short scenes are `HilbertRefinement2D`, `DistinctTextureGallery`, `DualTextureLighting3D`, `TextureFilteringZoom` and `HomotopyRibbons`; none loads imported 3D models.
 
 The long scenes contain active computation, not wall-clock sleeps. Their playback duration does not promise any particular render time. Lower development FPS reduces drawing work while fixed-step simulations retain their simulation rates. The Hilbert helper implements the [Skilling transpose/Gray-code construction](https://github.com/galtay/hilbertcurve#references) without an extra dependency.
 

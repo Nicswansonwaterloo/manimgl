@@ -61,3 +61,20 @@ def prepare_assets(directory):
     checker_image(directory)
     vector_image(directory)
     checker_video(directory)
+    for index in range(36):
+        texture_image(index, directory)
+
+
+def texture_image(index, directory=None):
+    """Distinct RGBA patterns exercising texture bindings, filtering and alpha."""
+    path = asset_path(f"pattern-{index:02d}.png", directory)
+    if not path.exists():
+        y, x = np.indices((64, 64))
+        stripes = ((x + y * (1 + index % 3)) // (2 + index % 7)) % 2
+        pixels = np.empty((64, 64, 4), dtype=np.uint8)
+        pixels[..., 0] = (x * 4 + index * 31) % 256
+        pixels[..., 1] = (y * 4 + index * 57) % 256
+        pixels[..., 2] = 60 + stripes * 195
+        pixels[..., 3] = np.where((x - 31.5)**2 + (y - 31.5)**2 < 29**2, 255, 60)
+        Image.fromarray(pixels).save(path)
+    return str(path)

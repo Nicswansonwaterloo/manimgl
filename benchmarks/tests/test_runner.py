@@ -12,6 +12,26 @@ from benchmarks.support import reporting, telemetry
 
 
 class RunnerTests(unittest.TestCase):
+    def test_cleanup_keeps_baseline_and_failures_but_removes_successful_candidates(self):
+        for baseline in (False, True):
+            with tempfile.TemporaryDirectory() as temporary:
+                output = Path(temporary)
+                (output / "logs").mkdir()
+                (output / "videos").mkdir()
+                runs = []
+                for name, status, valid in [("good", "ok", True), ("render", "failed", False),
+                                             ("visual", "ok", False), ("unchecked", "ok", None)]:
+                    log, video = f"logs/{name}.log", f"videos/{name}.mp4"
+                    (output / log).write_text("log")
+                    (output / video).write_bytes(b"video")
+                    runs.append(dict(name=name, status=status, visual={"passed": valid}, log=log, video=video))
+                run.clean_successful_artifacts({"runs": runs}, output, baseline)
+                self.assertFalse((output / "logs/good.log").exists())
+                self.assertEqual((output / "videos/good.mp4").exists(), baseline)
+                for name in ("render", "visual", "unchecked"):
+                    self.assertTrue((output / f"logs/{name}.log").exists())
+                    self.assertTrue((output / f"videos/{name}.mp4").exists())
+
     def test_main_runs_each_scene_twice_consecutively(self):
         with tempfile.TemporaryDirectory() as temporary:
             args = argparse.Namespace(compare=None, scene_file=Path("unused.py"), only=None,
@@ -33,10 +53,10 @@ class RunnerTests(unittest.TestCase):
                 self.assertEqual(run.main(), 0)
             self.assertEqual(calls, [("A", 1), ("A", 2), ("B", 1), ("B", 2)])
 
-    def test_thirty_five_distinct_workloads(self):
+    def test_forty_distinct_workloads(self):
         scenes = run.discover()
-        self.assertEqual(len(scenes), 35)
-        self.assertEqual(len({s["name"] for s in scenes}), 35)
+        self.assertEqual(len(scenes), 40)
+        self.assertEqual(len({s["name"] for s in scenes}), 40)
         self.assertTrue({"WaveLattice500", "DepthCity500", "OrbitalSwarm600", "MovingLight3D"}
                         <= {s["name"] for s in scenes})
         self.assertTrue({"BreadthFirstSearchGraph", "HilbertSpaceFilling3D", "ClothWindSimulation3D",
@@ -103,7 +123,7 @@ pathlib.Path(os.environ["MANIM_BENCHMARK_METRICS"]).write_text(json.dumps(metric
             clip = scratch / "retained.mp4"
             with patch.object(run, "WORKER", harness / "worker.py"):
                 result = run.run_one({"name": "Case", "file": "case.py"}, 1, args, output, scratch, clip)
-            self.assertEqual(list(scratch.iterdir()), [clip] if mode == "success" else [])
+            self.assertEqual(list(scratch.iterdir()), [clip])
             self.assertTrue((output / result["log"]).exists())
             self.assertTrue(result["movies_deleted"])
             return result
