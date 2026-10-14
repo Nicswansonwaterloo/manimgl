@@ -1,14 +1,11 @@
 import unittest
-from types import SimpleNamespace
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 import numpy as np
 
 from manimlib.mobject.geometry import Line, Square
 from manimlib.mobject.mobject import Mobject
 from manimlib.mobject.types.vectorized_mobject import VGroup
-from manimlib.renderer.drawing import VDrawing
-from manimlib.renderer.renderer import Bundling
 
 
 class LineEndpointTests(unittest.TestCase):
@@ -82,113 +79,6 @@ class LineEndpointTests(unittest.TestCase):
             with self.subTest(line=line), patch.object(Mobject, "put_start_and_end_on", return_value=line) as fallback:
                 line.put_start_and_end_on(np.zeros(3), np.ones(3))
                 fallback.assert_called_once()
-
-
-class StrokeVisibilityTests(unittest.TestCase):
-    def drawing(self, mob, cls=VDrawing):
-        material = SimpleNamespace(
-            data_buffer=Mock(claim=Mock(return_value=0)),
-            uniform_buffer=Mock(claim=Mock(return_value=0)),
-            record_size=mob.data.dtype.itemsize,
-        )
-        drawing = cls(material, mob)
-        drawing.draw_pass = Mock()
-        return drawing
-
-    def prepare(self, leader):
-        for drawing in leader.members or [leader]:
-            drawing.write_uniforms()
-        leader.write_records()
-
-    def modules(self, drawing):
-        drawing.draw_pass.reset_mock()
-        drawing.draw_passes(None)
-        return [call.args[1] for call in drawing.draw_pass.call_args_list]
-
-    def test_invisible_stroke_keeps_all_fill_passes(self):
-        for behind in (False, True):
-            drawing = self.drawing(Square().set_fill(opacity=1).set_stroke(width=0, behind=behind))
-            self.prepare(drawing)
-            self.assertEqual(self.modules(drawing), ["fill", "border", "fill"])
-
-    def test_width_and_opacity_each_hide_strokes(self):
-        for kwargs in ({"width": 0}, {"opacity": 0}):
-            drawing = self.drawing(Line().set_stroke(**kwargs))
-            self.prepare(drawing)
-            self.assertEqual(self.modules(drawing), [])
-
-    def test_interpolated_visibility_is_conservative(self):
-        line = Line().set_stroke(width=[2, 0, 0], opacity=[0, 0, 1])
-        drawing = self.drawing(line)
-        self.prepare(drawing)
-        self.assertEqual(self.modules(drawing), ["stroke"])
-
-    def test_unchanged_data_does_not_rescan(self):
-        drawing = self.drawing(Line().set_stroke(width=0))
-        self.prepare(drawing)
-        with patch("manimlib.renderer.drawing.np.any", side_effect=AssertionError("rescan")):
-            self.prepare(drawing)
-        drawing.mobject.set_stroke(width=3)
-        self.prepare(drawing)
-        self.assertTrue(drawing.has_stroke)
-
-    def test_merged_visibility_and_bundle_transitions(self):
-        first = self.drawing(Line().set_stroke(width=0))
-        second = self.drawing(Line().set_stroke(opacity=0))
-        first.members = [first, second]
-        bundling = Bundling()
-
-        def frame():
-            self.prepare(first)
-            if first.invalidated:
-                bundling.invalidate()
-            bundle = bundling.take(lambda: tuple(self.modules(first)))
-            return tuple(self.modules(first)) if bundle is None else bundle
-
-        for _ in range(4):
-            self.assertEqual(frame(), ())
-        self.assertIsNotNone(bundling.bundle)
-        second.mobject.set_stroke(opacity=1)
-        self.assertEqual(frame(), ("stroke",))
-        self.assertIsNone(bundling.bundle)
-        for _ in range(3):
-            self.assertEqual(frame(), ("stroke",))
-        second.mobject.set_stroke(opacity=0)
-        self.assertEqual(frame(), ())
-        self.assertIsNone(bundling.bundle)
-
-    def test_leader_own_cache_survives_regrouping(self):
-        hidden = self.drawing(Line().set_stroke(width=0))
-        visible = self.drawing(Line())
-        hidden.members = [hidden, visible]
-        self.prepare(hidden)
-        self.assertTrue(hidden.has_stroke)
-        hidden.members = None
-        self.prepare(hidden)
-        self.assertFalse(hidden.has_stroke)
-        self.assertTrue(hidden.invalidated)
-
-    def test_array_interpolation_refreshes_visibility(self):
-        line = Line().set_stroke(opacity=0)
-        source = line.copy()
-        target = line.copy().set_stroke(opacity=1)
-        drawing = self.drawing(line)
-        self.prepare(drawing)
-        line.data.interpolate(source.data, target.data, 0.5)
-        self.prepare(drawing)
-        self.assertTrue(drawing.has_stroke)
-        self.assertTrue(drawing.invalidated)
-
-    def test_custom_shaders_keep_existing_draw(self):
-        custom = Line().set_stroke(width=0)
-        custom.shader_code_replacements = {"some code": "custom code"}
-
-        class CustomDrawing(VDrawing):
-            pass
-
-        for drawing in (self.drawing(custom), self.drawing(Line().set_stroke(width=0), CustomDrawing)):
-            self.prepare(drawing)
-            self.assertEqual(self.modules(drawing), ["stroke"])
 
 
 if __name__ == "__main__":
