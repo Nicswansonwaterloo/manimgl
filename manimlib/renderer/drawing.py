@@ -441,6 +441,11 @@ class VDrawing(Drawing):
         # Whether the path encloses anything, and which way round its two passes go
         self.has_fill = False
         self.stroke_behind = False
+        # Own visibility is cached by data version; has_stroke covers the whole
+        # run when this drawing leads one. They must not share a cache value.
+        self.stroke_visibility_version = -1
+        self.own_stroke_visible = True
+        self.has_stroke = True
         # Which mobjects this one's fill has been promised not to overlap, see
         # VMobject.draw_fills_together
         self.fill_group: Any = None
@@ -463,6 +468,33 @@ class VDrawing(Drawing):
             self.invalidated = self.invalidated or has_fill != self.has_fill
             self.has_fill = has_fill
         return changed
+
+    def stroke_is_visible(self) -> bool:
+        # Custom shader code may give zero widths/alpha a different meaning.
+        if type(self) is not VDrawing or self.replacements:
+            return True
+        version = self.data.version
+        if version != self.stroke_visibility_version:
+            data = self.data.array
+            # These independent tests are deliberately conservative. Width and
+            # alpha can interpolate to overlap even if no record has both.
+            self.own_stroke_visible = bool(
+                np.any(data["stroke_width"] != 0)
+                and np.any(data["stroke_rgba"][:, 3] != 0)
+            )
+            self.stroke_visibility_version = version
+        return self.own_stroke_visible
+
+    def write_records(self) -> None:
+        super().write_records()
+        has_stroke = (
+            self.stroke_is_visible() if self.members is None
+            else any(member.stroke_is_visible() for member in self.members)
+        )
+        # The draw itself is baked into a render bundle. Changing only buffer
+        # contents cannot restore a stroke omitted from an earlier bundle.
+        self.invalidated = self.invalidated or has_stroke != self.has_stroke
+        self.has_stroke = has_stroke
 
     def can_follow(self, previous: Drawing) -> bool:
         """
@@ -530,7 +562,8 @@ class VDrawing(Drawing):
         )
 
     def draw_stroke(self, render_pass: RenderPass) -> None:
-        self.draw_pass(render_pass, "stroke", DEFAULT, self.stroke_vertices())
+        if self.has_stroke:
+            self.draw_pass(render_pass, "stroke", DEFAULT, self.stroke_vertices())
 
     def draw_passes(self, render_pass: RenderPass) -> None:
         if self.stroke_behind:

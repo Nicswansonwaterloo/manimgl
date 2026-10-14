@@ -749,6 +749,26 @@ class Line(TipableVMobject):
             return result
 
     def put_start_and_end_on(self, start: Vect3, end: Vect3) -> Self:
+        points = self.get_points()
+        # Only the ordinary three-point line has nothing else for the general
+        # transform to carry along (tips, gradient coordinates, subclass state).
+        # Allow just float32 rounding in the midpoint, not arbitrary collinear
+        # handles: those have a different Bezier parameterization.
+        if (
+            type(self) is Line
+            and len(points) == 3
+            and not self.submobjects
+            and not self.pointlike_uniform_keys
+            and self.path_arc == 0
+            and np.all(np.abs(points[1] - 0.5 * (points[0] + points[2]))
+                       <= np.finfo(points.dtype).eps * np.max(np.abs(points), axis=0))
+        ):
+            # Build before writing, since start/end may be views of our points.
+            start, end = np.asarray(start), np.asarray(end)
+            self.data["point"] = np.array([start, 0.5 * (start + end), end])
+            self.refresh_bounding_box()
+            self.get_unit_normal(refresh=True)
+            return self
         curr_start, curr_end = self.get_start_and_end()
         if np.isclose(curr_start, curr_end).all():
             # Handle null lines more gracefully
