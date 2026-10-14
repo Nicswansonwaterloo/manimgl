@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from colour import Color
 from colour import hex2rgb
+from colour import hsl2rgb
 from colour import rgb2hex
+from functools import lru_cache
 import numpy as np
 import random
 
@@ -18,9 +20,16 @@ if TYPE_CHECKING:
     from manimlib.typing import ManimColor, Vect3, Vect4, Vect3Array, Vect4Array, NDArray
 
 
+# Cache immutable values, keeping returned arrays and mutable Color objects independent.
+_cached_hex2rgb = lru_cache(maxsize=1024)(hex2rgb)
+_cached_hsl2rgb = lru_cache(maxsize=1024)(hsl2rgb)
+
+
 def color_to_rgb(color: ManimColor) -> Vect3:
     if isinstance(color, str):
         return hex_to_rgb(color)
+    elif type(color) is Color:
+        return np.array(_cached_hsl2rgb(color.get_hsl()))
     elif isinstance(color, Color):
         return np.array(color.get_rgb())
     else:
@@ -47,7 +56,7 @@ def rgb_to_hex(rgb: Vect3 | Sequence[float]) -> str:
 
 
 def hex_to_rgb(hex_code: str) -> Vect3:
-    return np.array(hex2rgb(hex_code))
+    return np.array(_cached_hex2rgb(hex_code))
 
 
 def invert_color(color: ManimColor) -> Color:
