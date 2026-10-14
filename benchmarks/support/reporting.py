@@ -46,7 +46,7 @@ def make_report(args, scenes, root, timestamp):
     return {
         "schema_version": 6, "created_at_utc": timestamp,
         "resolution": args.resolution, "fps": args.fps, "phases": ["first", "cached"],
-        "encoding": {"codec": "libx264", "pixel_format": "yuv420p", "crf": 23},
+        "encoding": {"codec": "libx264rgb", "pixel_format": "rgb24", "crf": 0},
         "scenes": scenes, "workload_sha256": digest.hexdigest(),
         "scene_sha256": scene_hashes,
         "repository": {"commit": git("rev-parse", "HEAD"), "status": git("status", "--porcelain")},

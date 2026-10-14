@@ -2,6 +2,8 @@
 
 35 deterministic scenes: 30 short workloads (~4 seconds) and five involved workloads (~15 seconds). Defaults are **854×480, 15 fps, one scene/process at a time**. Each scene renders exactly twice consecutively: a first run with a fresh scene disk cache, then a cached repeat in a new process. There is no repeat parameter. Every render includes movie encoding. Both scene movies are retained for visual validation; generated inputs and caches are temporary.
 
+Videos use lossless RGB encoding (`libx264rgb`, `rgb24`, CRF 0), preserving rendered RGB pixels for validation. Older lossy baselines are incompatible: preserve the old baseline directory and generate a new one with `--baseline`.
+
 Run these commands from the repository root with the `manimgl` Conda environment. Install the small runner dependency if needed:
 
 ```sh

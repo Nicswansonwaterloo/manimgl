@@ -103,7 +103,7 @@ def run_one(scene, iteration, args, output, scratch, retained_clip=None):
         config = {"directories": {"cache": str(scene_cache / "cache"),
                                   "subdirs": {"latex_cache": str(scene_cache / "latex")}},
                   "text": {"font": "sans-serif"},
-                  "file_writer": {"video_codec": "libx264", "pixel_format": "yuv420p", "crf": 23}}
+                  "file_writer": {"video_codec": "libx264rgb", "pixel_format": "rgb24", "crf": 0}}
         config_path = temporary / "config.yml"
         config_path.write_text(yaml.safe_dump(config))
         command = [sys.executable, str(WORKER), str(HERE / scene["file"]), scene["name"],
