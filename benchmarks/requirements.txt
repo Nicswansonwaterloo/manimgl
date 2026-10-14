@@ -1,0 +1,2 @@
+# Only the runner needs this; scene dependencies are already provided by ManimGL.
+psutil>=5.9

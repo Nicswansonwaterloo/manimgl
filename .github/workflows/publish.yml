@@ -8,18 +8,13 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
 
-    strategy:
-      fail-fast: false
-      matrix:
-        python: ["py37", "py38", "py39", "py310"]
-
     steps:
     - uses: actions/checkout@v6
 
     - name: Set up Python
       uses: actions/setup-python@v6
       with:
-        python-version: '3.8'
+        python-version: '3.12'
 
     - name: Install dependencies
       run: |
@@ -27,7 +22,10 @@ jobs:
         pip install setuptools wheel twine build
 
     - name: Build wheels
-      run: python setup.py bdist_wheel --python-tag ${{ matrix.python }}
+      run: python -m build --wheel
+
+    - name: Check distributions
+      run: twine check dist/*
 
     - name: Upload wheels
       env:

@@ -1,36 +1,30 @@
-Manim's documentation
+ManimGL documentation
 =====================
 
-.. image:: https://cdn.jsdelivr.net/gh/3b1b/manim@master/logo/white_with_name.png
+ManimGL is an animation engine for explanatory math videos. This checkout
+renders with WebGPU through ``wgpu``.
 
-Manim is an animation engine for explanatory math videos. It's used to create precise animations programmatically, as seen in the videos
-at `3Blue1Brown <https://www.3blue1brown.com/>`_.
-
-And here is a Chinese version of this documentation: https://docs.manim.org.cn/
+For installation instructions, see the
+`repository README <https://github.com/3b1b/manim#installation>`_.
+For runnable examples, use
+`example_scenes.py <https://github.com/3b1b/manim/blob/master/example_scenes.py>`_
+in your checkout.
 
 .. toctree::
    :maxdepth: 2
    :caption: Getting Started
 
-   getting_started/installation
    getting_started/quickstart
    getting_started/configuration
-   getting_started/example_scenes
-   getting_started/config
-   getting_started/structure
-   getting_started/whatsnew
 
 .. toctree::
    :maxdepth: 2
-   :caption: Documentation
+   :caption: Reference
 
    documentation/constants
-   documentation/custom_config
 
 .. toctree::
    :maxdepth: 2
    :caption: Development
 
-   development/changelog
    development/contributing
-   development/about

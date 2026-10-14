@@ -1,105 +1,65 @@
 CLI flags and configuration
 ===========================
 
-Command Line Interface
-----------------------
+Command line
+------------
 
-To run manim, you need to enter the directory at the same level as ``manimlib/`` 
-and enter the command in the following format into terminal:
-
-.. code-block:: sh
-
-    manimgl <code>.py <Scene> <flags>
-    # or
-    manim-render <code>.py <Scene> <flags>
-
-- ``<code>.py`` : The python file you wrote. Needs to be at the same level as ``manimlib/``, otherwise you need to use an absolute path or a relative path.
-- ``<Scene>`` : The scene you want to render here. If it is not written or written incorrectly, it will list all for you to choose. And if there is only one ``Scene`` in the file, this class will be rendered directly.
-- ``<flags>`` : CLI flags.
-
-Some useful flags
-^^^^^^^^^^^^^^^^^
-
-- ``-w`` to write the scene to a file.
-- ``-o`` to write the scene to a file and open the result.
-- ``-s`` to skip to the end and just show the final frame. 
-
-  - ``-so`` will save the final frame to an image and show it.
-
-- ``-n <number>`` to skip ahead to the ``n``\ ’th animation of a scene. 
-- ``-f`` to make the playback window fullscreen.
-
-All supported flags
-^^^^^^^^^^^^^^^^^^^
-
-========================================================== ====== =====================================================================================================================================================================================================
-flag                                                       abbr   function
-========================================================== ====== =====================================================================================================================================================================================================
-``--help``                                                 ``-h`` Show the help message and exit
-``--version``                                              ``-v`` Display the version of manimgl
-``--write_file``                                           ``-w`` Render the scene as a movie file
-``--skip_animations``                                      ``-s`` Skip to the last frame
-``--low_quality``                                          ``-l`` Render at a low quality (for faster rendering)
-``--medium_quality``                                       ``-m`` Render at a medium quality
-``--hd``                                                          Render at a 1080p quality
-``--uhd``                                                         Render at a 4k quality
-``--full_screen``                                          ``-f`` Show window in full screen
-``--presenter_mode``                                       ``-p`` Scene will stay paused during wait calls until space bar or right arrow is hit, like a slide show
-``--gif``                                                  ``-i`` Save the video as gif
-``--transparent``                                          ``-t`` Render to a movie file with an alpha channel
-``--vcodec VCODEC``                                               Set the FFmpeg video codec
-``--pix_fmt PIX_FMT``                                             Set the FFmpeg pixel format; defaults to ``yuv420p``
-``--quiet``                                                ``-q`` Suppress rendering progress and file-ready messages
-``--write_all``                                            ``-a`` Write all the scenes from a file
-``--open``                                                 ``-o`` Automatically open the saved file once its done
-``--finder``                                                      Show the output file in finder
-``--subdivide``                                                   Write an individual movie file for each animation
-``--file_name FILE_NAME``                                         Name for the movie or image file
-``--start_at_animation_number START[,END]``                ``-n`` Start at one animation index, or stop before a second index such as ``3,6``
-``--embed LINE_NUMBER``                                    ``-e`` Enter an interactive IPython session at the given source line
-``--resolution RESOLUTION``                                ``-r`` Resolution, passed as "WxH", e.g. "1920x1080"
-``--fps FPS``                                                     Frame rate, as an integer
-``--color COLOR``                                          ``-c`` Background color
-``--leave_progress_bars``                                         Leave progress bars displayed in terminal
-``--show_animation_progress``                                     Show a progress bar for each animation
-``--prerun``                                                      Calculate the frame count with an initial animation-free run
-``--video_dir VIDEO_DIR``                                         Directory to write video
-``--config_file CONFIG_FILE``                                     Path to the custom configuration file
-``--log-level LOG_LEVEL``                                         Level of messages to Display, can be DEBUG / INFO / WARNING / ERROR / CRITICAL
-``--clear-cache``                                                 Erase the cache used for Tex and Text mobjects
-``--autoreload``                                                  Automatically reload Python modules to pick up code changes across during an interactive embedding
-========================================================== ====== =====================================================================================================================================================================================================
-
-custom_config
---------------
-
-In order to perform more configuration (about directories, etc.) and permanently 
-change the default value (you don't have to add flags to the command every time), 
-you can modify ``custom_config.yml``. The meaning of each option is in 
-page :doc:`../documentation/custom_config`.
-
-You can also use different ``custom_config.yml`` for different directories, such as 
-following the directory structure:
-
-.. code-block:: text
-
-    manim/
-    ├── manimlib/
-    │   ├── animation/
-    │   ├── ...
-    │   ├── default_config.yml
-    │   └── window.py
-    ├── project/
-    │   ├── code.py
-    │   └── custom_config.yml
-    └── custom_config.yml
-
-When you enter the ``project/`` folder and run ``manimgl code.py <Scene>``, 
-it will overwrite ``manim/default_config.yml`` with ``custom_config.yml`` 
-in the ``project`` folder.
-
-Alternatively, you can use ``--config_file`` flag in CLI to specify configuration file manually.
+Run a scene with a path to its Python file and its class name:
 
 .. code-block:: sh
 
-    manimgl project/code.py --config_file /path/to/custom_config.yml
+    manimgl path/to/scenes.py SceneName
+
+``manim-render`` is an alias for ``manimgl``. With multiple scenes and no
+class name, ManimGL prompts you to choose one.
+
+Common flags:
+
+- ``-w`` writes a video.
+- ``-o`` writes the result and opens it.
+- ``-s`` skips animations to show the final frame; combine with ``-w`` or
+  ``-o`` to save an image.
+- ``-l`` renders at 480p; ``-m`` renders at 720p.
+- ``-n START[,END]`` starts at an animation index and optionally stops
+  before a second index.
+- ``-r WIDTHxHEIGHT`` sets the resolution, and ``--fps FPS`` sets the frame rate.
+- ``--video_dir PATH`` selects the output directory for videos and images.
+
+Get the complete list from the installed CLI:
+
+.. code-block:: sh
+
+    manimgl --help
+
+Configuration files
+-------------------
+
+Create ``custom_config.yml`` in the directory from which you run ManimGL.
+Only include settings you want to override. Defaults are loaded from
+``manimlib/default_config.yml``, followed by the working directory's
+``custom_config.yml``, then a file supplied with ``--config_file``.
+CLI options override the corresponding settings. Loading a custom file
+does not modify the defaults on disk.
+
+For example:
+
+.. code-block:: yaml
+
+    directories:
+      subdirs:
+        output: "renders"
+    camera:
+      background_color: "#222222"
+      fps: 30
+
+Both videos and final-frame images will be written under ``renders/``.
+To use a configuration file at another path:
+
+.. code-block:: sh
+
+    manimgl path/to/scenes.py SceneName --config_file path/to/config.yml
+
+The defaults below document the available settings alongside their values:
+
+.. literalinclude:: ../../../manimlib/default_config.yml
+   :language: yaml

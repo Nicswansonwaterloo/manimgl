@@ -4,9 +4,13 @@ on:
   push:
     paths:
       - 'docs/**'
+      - 'manimlib/default_config.yml'
+      - '.github/workflows/docs.yml'
   pull_request:
     paths:
       - 'docs/**'
+      - 'manimlib/default_config.yml'
+      - '.github/workflows/docs.yml'
 
 jobs:
   docs:
@@ -30,7 +34,7 @@ jobs:
     - name: Build document with Sphinx
       run: |
         cd docs
-        make html
+        make html SPHINXOPTS="-W --keep-going"
         
     - name: Deploy to GitHub pages
       if: ${{ github.event_name == 'push' }}

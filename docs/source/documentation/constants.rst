@@ -20,12 +20,11 @@ These values will be determined based on the ``camera`` configuration in default
 
     DEFAULT_PIXEL_HEIGHT
     DEFAULT_PIXEL_WIDTH
-    DEFAULT_FPS
 
 Buffs
 -----
 
-These values will be determined based on the ``size`` configuration in default_config.yml or custom_config.yml
+These values will be determined based on the ``sizes`` configuration in default_config.yml or custom_config.yml
 
 
 .. code-block:: python
@@ -89,7 +88,7 @@ Text
 Colours
 -------
 
-Color constants are determined based on the ``color`` configuration in default_config.yml or custom_config.yml
+Color constants are determined based on the ``colors`` configuration in default_config.yml or custom_config.yml
 
 Here are the preview of default colours. (Modified from 
 `elteoremadebeethoven <https://elteoremadebeethoven.github.io/manim_3feb_docs.github.io/html/_static/colors/colors.html>`_)

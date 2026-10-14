@@ -7,7 +7,7 @@ Choose the right Manim project first
 ------------------------------------
 
 This repository is the ManimGL version used by 3Blue1Brown. It focuses on
-OpenGL rendering, interactive workflows, and the needs of the videos in
+WebGPU rendering, interactive workflows, and the needs of the videos in
 `3b1b/videos <https://github.com/3b1b/videos>`_. Pull requests are welcome here,
 but reviews can take some time.
 

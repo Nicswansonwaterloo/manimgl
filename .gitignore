@@ -151,6 +151,7 @@ dmypy.json
 # For manim
 /videos
 /custom_config.yml
+/benchmarks/results
 test.py
 CLAUDE.md
 
