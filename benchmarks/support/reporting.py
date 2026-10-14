@@ -121,6 +121,7 @@ def summarize(runs):
 
 
 def save_report(report, output):
+    report["video_generation_seconds"] = sum(run["wall_seconds"] for run in report["runs"])
     report["summary"] = summarize(report["runs"])
     (output / "results.json").write_text(json.dumps(report, indent=2))
     if report["summary"]:
@@ -166,6 +167,15 @@ def print_results(report):
     CONSOLE.print("[dim]GPU % is device-wide and includes other apps; N/A = unavailable. OS/driver caches are not reset.[/dim]")
     CONSOLE.print("[dim]CPU 100% = one logical core · Tree MiB = average of the two sampled process-tree RSS peaks[/dim]")
     passed = sum(r["status"] == "ok" for r in report["runs"])
-    minutes, seconds = divmod(round(sum(r["wall_seconds"] for r in report["runs"])), 60)
+    def duration(value):
+        if value is None:
+            return "not run"
+        minutes, seconds = divmod(round(value), 60)
+        return f"{minutes}m {seconds:02d}s"
+
+    generation = report.get("video_generation_seconds", sum(r["wall_seconds"] for r in report["runs"]))
+    validation = duration(report.get("validation_seconds"))
+    if report.get("interrupted") and report.get("validation_seconds") is not None:
+        validation += " (interrupted)"
     CONSOLE.print(f"\n[bold]{passed}/{len(report['runs'])} renders passed[/bold] · "
-                  f"total measured wall time: {minutes}m {seconds:02d}s")
+                  f"Video generation: {duration(generation)} · Validation: {validation}")

@@ -74,6 +74,7 @@ On a visual mismatch, all failing frame indices and scores are recorded, and the
 
 ## Reading the numbers
 
+- **Final timing totals**: video-generation time sums the measured wall times of both renders per scene (including process startup and encoding). Validation time measures the post-render checks, calibration/comparison and saved visual diffs. Both display minutes and seconds and are saved separately in `results.json`. Setup, video copying, optional suite-video joining and reference preflight checks are outside these totals.
 - **Render s / FPS**: `Scene.run()` time and emitted frames divided by that time, including setup, object creation, updates, GPU readback and encoder drain. Playback FPS is a separate setting. This is generally the best starting point for renderer changes.
 - **Wall s**: startup/imports, device initialization, scene execution and process exit (up to ~50 ms of process-wait polling delay). Import and camera-init times are also recorded in JSON.
 - **CPU %**: renderer plus waited-for encoder CPU time on Unix; 100% is one logical core. **Tree MiB**: peak sampled renderer-plus-descendant RSS at 100 ms intervals; shared pages may be double-counted and brief peaks missed. Worker-only OS peak RSS is also saved. Neither is GPU memory.

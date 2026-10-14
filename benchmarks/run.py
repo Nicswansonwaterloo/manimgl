@@ -261,8 +261,8 @@ def main():
             report["interrupted"] = True
         finally:
             save_report(report, output)
-    print_results(report)
     if not report["interrupted"]:
+        validation_started = time.perf_counter()
         try:
             with CONSOLE.status("Checking decoded videos (outside render timings)"):
                 valid = validate_suite(report, output, tolerances, reference)
@@ -278,7 +278,9 @@ def main():
         except KeyboardInterrupt:
             report["interrupted"] = True
         finally:
+            report["validation_seconds"] = time.perf_counter() - validation_started
             save_report(report, output)
+    print_results(report)
     CONSOLE.print(f"Reports: {output}")
     if report.get("video"):
         CONSOLE.print(f"Combined video: {output / report['video']}")

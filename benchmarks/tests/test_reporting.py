@@ -15,13 +15,14 @@ class ReportingTests(unittest.TestCase):
         runs = [{"name": "Case", "phase": phase, "status": "ok", "wall_seconds": 61.4}
                 for phase in ("first", "cached")]
         with patch.object(reporting, "CONSOLE") as console:
-            reporting.print_results({"runs": runs, "summary": reporting.summarize(runs)})
+            reporting.print_results({"runs": runs, "summary": reporting.summarize(runs), "validation_seconds": 65})
         tables = [call.args[0] for call in console.print.call_args_list
                   if isinstance(call.args[0], reporting.Table)]
         self.assertEqual(len(tables), 1)
         self.assertIn("Cached wall s", [c.header for c in tables[0].columns])
         self.assertTrue(all("GPU %" in [c.header for c in table.columns] for table in tables))
         self.assertIn("2m 03s", console.print.call_args.args[0])
+        self.assertIn("Validation: 1m 05s", console.print.call_args.args[0])
 
     def test_display_averages_resources_but_preserves_separate_timings(self):
         runs = [{"name": "Case", "phase": phase, "status": "ok", "wall_seconds": seconds,
