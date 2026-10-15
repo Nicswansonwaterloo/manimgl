@@ -440,6 +440,7 @@ class VDrawing(Drawing):
         super().__init__(material, mobject)
         # Whether the path encloses anything, and which way round its two passes go
         self.has_fill = False
+        self.has_fill_border = False
         self.stroke_behind = False
         # Which mobjects this one's fill has been promised not to overlap, see
         # VMobject.draw_fills_together
@@ -462,6 +463,9 @@ class VDrawing(Drawing):
             )
             self.invalidated = self.invalidated or has_fill != self.has_fill
             self.has_fill = has_fill
+            has_fill_border = self.uniforms["fill_border_width"] > 0.0
+            self.invalidated = self.invalidated or has_fill_border != self.has_fill_border
+            self.has_fill_border = has_fill_border
         return changed
 
     def can_follow(self, previous: Drawing) -> bool:
@@ -517,14 +521,17 @@ class VDrawing(Drawing):
 
     def draw_fill_border(self, render_pass: RenderPass) -> None:
         """
-        Traces the boundary with a stroke in the fill color, which is what anti-aliases the
-        fill, a stencil test being all or nothing. Drawn only where the winding number is
+        Traces an explicit border, or anti-aliases the fill when MSAA is disabled.
+        With MSAA the fill shader samples the curve itself, so adding a smoothing border
+        would thicken the shape unnecessarily. Drawn only where the winding number is
         zero, meaning outside the shape, so that its faded edge never blends on top of the
         fill and leaves a seam for partially transparent colors.
 
         One curve more than the path holds, since the chord closing the last subpath has no
         end-of-subpath curve to be drawn in place of, see stroke.wgsl.
         """
+        if self.material.gpu.samples > 1 and not self.has_fill_border:
+            return
         self.draw_pass(
             render_pass, "border", FILL_BORDER, self.stroke_vertices(extra_curves=1),
         )

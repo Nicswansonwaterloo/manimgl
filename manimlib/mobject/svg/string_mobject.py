@@ -47,7 +47,7 @@ class StringMobject(SVGMobject, ABC):
         self,
         string: str,
         fill_color: ManimColor = DEFAULT_MOBJECT_COLOR,
-        fill_border_width: float = 0.5,
+        fill_border_width: float = 0.0,
         stroke_color: ManimColor = DEFAULT_MOBJECT_COLOR,
         stroke_width: float = 0,
         base_color: ManimColor = DEFAULT_MOBJECT_COLOR,

@@ -32,7 +32,8 @@ struct VertexOutput {
     // whole, rather than to the one hugging the curve, which gets cut
     @location(2) fill_all: f32,
     // uv space is where the curve coincides with y = x^2
-    @location(3) uv_coords: vec2f,
+    // Test the curve at each MSAA sample, not once at the pixel center.
+    @location(3) @interpolate(perspective, sample) uv_coords: vec2f,
 }
 
 @vertex
