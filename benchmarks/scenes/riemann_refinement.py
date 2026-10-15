@@ -12,7 +12,7 @@ class RiemannRefinement(Scene):
                                                 stroke_width=0.5, fill_opacity=0.8)
                       for n in [16, 32, 64, 128, 256]]
         counter = Integer(16, color=BLACK, font_size=32).to_corner(UR)
-        brace = Brace(axes.x_axis, DOWN, color=BLACK)
+        brace = Brace(axes.x_axis, DOWN, fill_color=BLACK)
         self.add(axes, graph, partitions[0], counter, brace)
         current = partitions[0]
         for n, partition in zip([32, 64, 128, 256], partitions[1:]):

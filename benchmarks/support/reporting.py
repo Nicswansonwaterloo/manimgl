@@ -27,10 +27,10 @@ def make_report(args, scenes, root, timestamp):
     for scene in scenes:
         digest.update(scene["name"].encode())
         digest.update(Path(scene["file"]).read_bytes())
-    for name in ["algorithms.py", "assets.py", "hilbert_visuals.py"]:
+    for name in ["algorithms.py", "assets.py", "hilbert_visuals.py", "personal_math.py"]:
         digest.update((Path(__file__).parent / name).read_bytes())
     helpers = b"".join((Path(__file__).parent / name).read_bytes()
-                       for name in ["algorithms.py", "assets.py", "hilbert_visuals.py"])
+                       for name in ["algorithms.py", "assets.py", "hilbert_visuals.py", "personal_math.py"])
     scene_hashes = {scene["name"]: hashlib.sha256(Path(scene["file"]).read_bytes() + helpers).hexdigest()
                     for scene in scenes}
     versions = {}

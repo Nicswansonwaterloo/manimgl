@@ -13,7 +13,8 @@ class ClothWindSimulation3D(ThreeDScene):
         positions, previous = rest.copy(), rest.copy()
         surface = TexturedSurface(ParametricSurface(lambda u, v: [u, v, 2.2],
             u_range=(-3, 3), v_range=(-2, 2), resolution=(nu, nv), shading=(0.5, 0.3, 0.4)), checker_image())
-        lines = VGroup(*[VMobject(stroke_color=WHITE, stroke_width=0.7) for _ in range(nu + nv)])
+        lines = VGroup(*[VMobject(stroke_color=WHITE, stroke_width=0.5,
+                                 stroke_opacity=0.28).apply_depth_test() for _ in range(nu + nv)])
         bead_indices = [(i, j) for i in range(0, nu, 3) for j in range(0, nv, 3)]
         beads = Group(*[Sphere(radius=0.035, resolution=(9, 7), color=GOLD).move_to(rest[i, j])
                         for i, j in bead_indices])
@@ -51,12 +52,17 @@ class ClothWindSimulation3D(ThreeDScene):
                         positions[..., 2] = np.maximum(positions[..., 2], -0.95)
                     simulation_time[0] += h
             surface.set_points(positions.reshape(-1, 3))
+            # Lift stitching along the deformed normal. Coplanar strokes used
+            # to shimmer against the surface and show through its folds.
+            normals = np.cross(np.gradient(positions, axis=0), np.gradient(positions, axis=1))
+            normals /= np.maximum(np.linalg.norm(normals, axis=-1, keepdims=True), 1e-8)
+            stitching = positions + 0.012 * normals
             for i in range(nu):
-                lines[i].set_points_as_corners(positions[i])
+                lines[i].set_points_as_corners(stitching[i])
             for j in range(nv):
-                lines[nu + j].set_points_as_corners(positions[:, j])
+                lines[nu + j].set_points_as_corners(stitching[:, j])
             for bead, (i, j) in zip(beads, bead_indices):
-                bead.move_to(positions[i, j] + 0.015 * OUT)
+                bead.move_to(positions[i, j] + 0.04 * normals[i, j])
 
         simulate(None, 0)
         controller = Mobject().add_updater(simulate)

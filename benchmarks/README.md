@@ -1,6 +1,6 @@
 # Render benchmarks
 
-40 deterministic scenes: 35 short workloads (~4 seconds), an 8-second 3D Hilbert refinement and four involved workloads (~15 seconds). Defaults are **854×480, 15 fps, one scene/process at a time**. Each scene renders exactly twice consecutively: a first run with a fresh scene disk cache, then a cached repeat in a new process. There is no repeat parameter. Every render includes movie encoding. Baseline movies are retained as references. Candidate movies and logs are deleted after successful visual validation; failed or unchecked runs retain their diagnostics. Generated inputs and caches are temporary.
+48 deterministic scenes: 36 short workloads (~4 seconds), six 8-second workloads, and six involved workloads (~15 seconds). Defaults are **854×480, 15 fps, one scene/process at a time**. Each scene renders exactly twice consecutively: a first run with a fresh scene disk cache, then a cached repeat in a new process. There is no repeat parameter. Every render includes movie encoding. Baseline movies are retained as references. Candidate movies and logs are deleted after successful visual validation; failed or unchecked runs retain their diagnostics. Generated inputs and caches are temporary.
 
 Validation references use lossless RGB encoding (`libx264rgb`, `rgb24`, CRF 0), preserving rendered RGB pixels. These files live in `reference-videos/` and may display incorrectly in players without RGB H.264 support. Watch the conventional H.264 copies in `videos/` instead: one per baseline scene, plus copies of failing candidate phases. Review copies are made after timed rendering and never used for pixel comparisons. Older lossy baselines are incompatible: preserve the old baseline directory and generate a new one with `--baseline`.
 
@@ -85,7 +85,7 @@ On a visual mismatch, all failing frame indices and scores are recorded, and the
 
 ## Layout and coverage
 
-`run.py` is the entry point. `scenes/` contains one file per scene; `support/` holds asset generation, numerical algorithms, telemetry, the worker and reporting. `tests/` checks runner lifecycle and algorithm invariants. The root `.gitignore` ignores the entire `benchmarks/` directory as requested, including source and generated results; retain any baselines you need locally or copy them elsewhere.
+`run.py` is the entry point. `scenes/` contains one file per scene; `support/` holds asset generation, numerical algorithms, telemetry, the worker and reporting. `tests/` checks runner lifecycle and algorithm invariants. The root `.gitignore` ignores generated `benchmarks/results/`; benchmark sources are tracked. Retain any baselines you need locally or copy them elsewhere.
 
 The short scenes cover vector paths, boolean operations, Pango/LaTeX, changing numbers, graphs, vector fields, updaters, camera motion, backgrounds, transparency, clipping, textures, preloaded/streaming video, lighting, surfaces, shader fractals, 500–600 independent mobjects, a 500-building city, a 20,000-point cloud, sorting, connected meshes, object churn and recursive zoom. Use `--list` for individual descriptions. `TexMatching` needs a TeX installation.
 
@@ -94,14 +94,16 @@ The long workloads are:
 | Scene | Workload |
 | --- | --- |
 | `BreadthFirstSearchGraph` | Real FIFO BFS over 336 nodes / 690 deforming edges, live queue and reconstructed shortest path |
-| `HilbertSpaceFilling3D` | Orders 1–4, 4,096 face-adjacent sites, 32 rainbow paths, progressive drawing, curved refinement transforms and camera orbit |
+| `HilbertSpaceFilling3D` | Orders 1–4, 4,096 face-adjacent sites, 32 rainbow paths with shared refinement knots, progressive drawing, curved transforms, 32 local tracers and continuous camera orbit |
 | `ClothWindSimulation3D` | 4,617 constrained particles, wind/gravity/contact, deforming texture, 138 wire paths and 513 shaded beads |
 | `GalaxyMergerNBody3D` | 718 bodies, direct all-pairs gravity, 120 Hz velocity-Verlet integration and 32 history trails |
 | `ReactionDiffusionLaboratory` | Two-species PDE, 10,240 simulation cells, 2,560 vector tiles and evolving concentration profiles |
+| `TernaryFormCloud` | All n=1–51 concentration stages, e=1–5 dense clouds, six halo/point layers, prime highlights, reduction shell, axes and camera orbit |
+| `TernaryTetrahedronWalk` | All 70 Cholesky tetrahedron morphs, n=8–17 convergence, e=1–3 destination clouds, six live edge labels and shaded vertices |
 
 The five additional short scenes are `HilbertRefinement2D`, `DistinctTextureGallery`, `DualTextureLighting3D`, `TextureFilteringZoom` and `HomotopyRibbons`; none loads imported 3D models.
 
-The long scenes contain active computation, not wall-clock sleeps. Their playback duration does not promise any particular render time. Lower development FPS reduces drawing work while fixed-step simulations retain their simulation rates. The Hilbert helper implements the [Skilling transpose/Gray-code construction](https://github.com/galtay/hilbertcurve#references) without an extra dependency.
+The long scenes contain active computation, not wall-clock sleeps. Their playback duration does not promise any particular render time. Lower development FPS reduces drawing work while fixed-step simulations retain their simulation rates. The Hilbert helper implements the [Skilling transpose/Gray-code construction](https://github.com/galtay/hilbertcurve#references) without an extra dependency. Its common sampling retains every corner of every order, so refinement transforms preserve point correspondence. The ternary scenes retain the concentration, convergence and growing-e stages of their source films; translucent point halos are composited without obscuring their bright centers.
 
 Add a file in `scenes/` with a top-level class directly inheriting `Scene`, `ThreeDScene` or `InteractiveScene` and a descriptive docstring; it is discovered automatically. Seed randomness. Regression checks:
 

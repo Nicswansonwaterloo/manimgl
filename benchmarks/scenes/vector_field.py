@@ -5,6 +5,7 @@ class VectorFieldFlow(Scene):
     """Vectorized arrow field recomputation and particle advection."""
 
     def construct(self):
+        self.frame.set_height(10)
         plane = NumberPlane((-6, 6), (-3, 3))
         phase = ValueTracker(0)
 
@@ -14,10 +15,10 @@ class VectorFieldFlow(Scene):
 
         field = VectorField(flow, plane, density=2, stroke_width=2)
         field.add_updater(lambda m: m.update_vectors())
-        particles = VGroup(*[Dot(plane.c2p(x, y), radius=0.04, color=YELLOW)
+        particles = VGroup(*[Dot(plane.c2p(x, y), radius=0.04, fill_color=YELLOW)
                              for x in np.linspace(-4, 4, 16) for y in [-1, 0, 1]])
         for dot in particles:
-            dot.add_updater(lambda m, dt: m.shift(
-                dt * 0.4 * np.array([-m.get_y(), m.get_x(), 0])))
+            dot.add_updater(lambda m, dt: m.shift(dt * np.r_[flow(
+                np.array([plane.p2c(m.get_center())]))[0], 0]))
         self.add(plane, field, particles)
         self.play(phase.animate.set_value(TAU), run_time=4, rate_func=linear)

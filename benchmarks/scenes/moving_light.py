@@ -3,7 +3,7 @@ from manimlib import *
 
 class MovingLight3D(ThreeDScene):
     """A moving point light across matte, reflective and glossy surfaces with wire geometry."""
-    default_camera_config = dict(background_color="#171020", light_source_position=[-4, -3, 5])
+    default_camera_config = dict(background_color="#171020", light_source_position=[-4, -3, 3])
 
     def construct(self):
         objects = Group()
@@ -16,7 +16,7 @@ class MovingLight3D(ThreeDScene):
             objects.add(sphere, torus)
         marker = GlowDot(radius=0.15, color=WHITE)
         marker.add_updater(lambda m: m.move_to(self.camera.light_source.get_center()))
-        self.frame.reorient(0, 50).set_height(9)
+        self.frame.reorient(0, 50).set_height(11)
         self.add(objects, marker)
         self.play(Rotate(self.camera.light_source, angle=TAU, axis=OUT, about_point=ORIGIN),
                   self.frame.animate.reorient(25, 60), run_time=4, rate_func=linear)

@@ -11,7 +11,7 @@ class SpringMesh(Scene):
                           for r in range(rows) for c in range(cols)])
         edges = [(r * cols + c, r * cols + c + 1) for r in range(rows) for c in range(cols - 1)]
         edges += [(r * cols + c, (r + 1) * cols + c) for r in range(rows - 1) for c in range(cols)]
-        nodes = VGroup(*[Dot(p, radius=0.04, color=GOLD) for p in homes])
+        nodes = VGroup(*[Dot(p, radius=0.04, fill_color=GOLD) for p in homes])
         springs = VGroup(*[Line(homes[a], homes[b], stroke_width=1.5, color=TEAL) for a, b in edges])
 
         def deform(_):

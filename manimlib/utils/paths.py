@@ -68,9 +68,16 @@ def path_along_arc(
             adjustments = np.nan_to_num(np.cross(unit_axis, start_to_end / 2.0) / np.tan(theta / 2))
             arc_centers = start_points + 0.5 * start_to_end + adjustments
 
-        c_to_start = start_points - arc_centers
+        # The circular motion is perpendicular to the rotation axis. Motion
+        # along it must interpolate linearly: treating that component as a
+        # cosine-scaled radius misses the endpoint in 3D and causes a snap
+        # when a ReplacementTransform installs its actual target.
+        axial_displacement = np.sum(start_to_end * unit_axis, axis=-1, keepdims=True) * unit_axis
+        c_to_start = start_points - arc_centers + 0.5 * axial_displacement
         c_to_perp = np.cross(unit_axis, c_to_start)
-        return arc_centers + np.cos(alpha * theta) * c_to_start + np.sin(alpha * theta) * c_to_perp
+        return (arc_centers + np.cos(alpha * theta) * c_to_start
+                + np.sin(alpha * theta) * c_to_perp
+                + (alpha - 0.5) * axial_displacement)
 
     return path
 

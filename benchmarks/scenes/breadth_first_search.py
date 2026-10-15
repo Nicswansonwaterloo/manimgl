@@ -25,7 +25,7 @@ class BreadthFirstSearchGraph(Scene):
         events, parents, distances = breadth_first_events(adjacency, start)
         edges = VGroup(*[Line(homes[a], homes[b], stroke_color=GREY_D, stroke_width=1)
                          for a, b in pairs])
-        nodes = VGroup(*[Dot(point, radius=0.035, color=GREY_B) for point in homes])
+        nodes = VGroup(*[Dot(point, radius=0.035, fill_color=GREY_B) for point in homes])
         title = Text(f"BREADTH-FIRST SEARCH · {len(homes)} nodes", font="sans-serif", font_size=26).to_edge(UP)
         panel_title = Text("FIFO frontier", font="sans-serif", font_size=24).move_to([5.2, 2.5, 0])
         queue_digits = VGroup(*[Integer(0, font_size=19, color=TEAL).move_to([5.2, 1.9 - i * 0.3, 0])

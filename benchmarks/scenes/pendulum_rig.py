@@ -18,7 +18,7 @@ class PendulumRig(Scene):
 
             rod = Line(pivot, endpoint(), stroke_width=2, color=GREY_B)
             rod.add_updater(lambda m, dt, pivot=pivot, endpoint=endpoint: m.put_start_and_end_on(pivot, endpoint()))
-            bob = Dot(radius=0.08, color=palette[i])
+            bob = Dot(radius=0.08, fill_color=palette[i])
             bob.add_updater(lambda m, dt, endpoint=endpoint: m.move_to(endpoint()))
             rods.add(rod)
             bobs.add(bob)

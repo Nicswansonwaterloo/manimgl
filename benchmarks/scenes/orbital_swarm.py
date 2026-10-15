@@ -12,7 +12,7 @@ class OrbitalSwarm600(Scene):
         for i in range(600):
             radius, phase = rng.uniform(0.4, 3.1), rng.uniform(0, TAU)
             speed = 0.5 + 1.5 / (radius + 0.5)
-            dot = Dot(radius=0.015 + 0.008 * (i % 3), color=palette[i])
+            dot = Dot(radius=0.015 + 0.008 * (i % 3), fill_color=palette[i])
             dot.add_updater(lambda m, dt, r=radius, p=phase, w=speed: m.move_to([
                 1.8 * r * np.cos(p + w * self.time), r * np.sin(p + w * self.time), 0
             ]))

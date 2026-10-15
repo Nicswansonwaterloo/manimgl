@@ -19,8 +19,13 @@ def checker_image(directory=None):
     path = asset_path("checker.png", directory)
     if not path.exists():
         y, x = np.indices((256, 256))
-        check = ((x // 32 + y // 32) % 2).astype(np.uint8)
-        Image.fromarray(np.stack([255 * check, x.astype(np.uint8), y.astype(np.uint8)], axis=-1)).save(path)
+        check = ((x // 32 + y // 32) % 2).astype(bool)
+        # A woven teal/ivory checker makes UV direction and deformation legible
+        # without the old saturated RGB ramps overwhelming surface lighting.
+        pixels = np.where(check[..., None], [222, 201, 151], [31, 114, 131]).astype(float)
+        pixels += (2 * np.sin(x * np.pi / 2) * np.sin(y * np.pi / 2))[..., None]
+        pixels[(x % 32 < 1) | (y % 32 < 1)] *= 0.75
+        Image.fromarray(np.clip(pixels, 0, 255).astype(np.uint8)).save(path)
     return str(path)
 
 

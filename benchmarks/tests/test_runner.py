@@ -53,14 +53,17 @@ class RunnerTests(unittest.TestCase):
                 self.assertEqual(run.main(), 0)
             self.assertEqual(calls, [("A", 1), ("A", 2), ("B", 1), ("B", 2)])
 
-    def test_forty_distinct_workloads(self):
+    def test_forty_eight_distinct_workloads(self):
         scenes = run.discover()
-        self.assertEqual(len(scenes), 40)
-        self.assertEqual(len({s["name"] for s in scenes}), 40)
+        self.assertEqual(len(scenes), 48)
+        self.assertEqual(len({s["name"] for s in scenes}), 48)
         self.assertTrue({"WaveLattice500", "DepthCity500", "OrbitalSwarm600", "MovingLight3D"}
                         <= {s["name"] for s in scenes})
         self.assertTrue({"BreadthFirstSearchGraph", "HilbertSpaceFilling3D", "ClothWindSimulation3D",
                          "GalaxyMergerNBody3D", "ReactionDiffusionLaboratory"} <= {s["name"] for s in scenes})
+        self.assertTrue({"EllipticChordBuild", "EllipticDotSquiggle", "TernaryFormCloud",
+                         "TernaryTetrahedronWalk", "ArithmeticSemicircleSweep", "ComplexSquareRedraw",
+                         "LinearRankCollapse", "SpanningVectorRedraw"} <= {s["name"] for s in scenes})
         self.assertFalse({"GeometryGrid", "PathMorphs", "UpdaterGrid", "SVGPaths", "ImageTiles"}
                          & {s["name"] for s in scenes})
 

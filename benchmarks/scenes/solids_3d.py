@@ -11,6 +11,7 @@ class Solids3D(ThreeDScene):
             Cylinder(radius=0.65, height=1.8, color=YELLOW),
             Cone(radius=0.8, height=1.8, color=RED),
         ).arrange(RIGHT, buff=0.6)
+        self.frame.set_height(10)
         self.add(solids)
         self.play(Rotate(solids, angle=PI, axis=UP), run_time=2)
         self.play(self.frame.animate.reorient(40, 65), run_time=2)
