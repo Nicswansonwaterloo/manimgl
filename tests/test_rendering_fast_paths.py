@@ -1,3 +1,4 @@
+import itertools
 import unittest
 from unittest.mock import patch
 
@@ -6,6 +7,20 @@ import numpy as np
 from manimlib.mobject.geometry import Line, Square
 from manimlib.mobject.mobject import Mobject
 from manimlib.mobject.types.vectorized_mobject import VGroup, VMobject
+
+
+class BoundingBoxPointTests(unittest.TestCase):
+    def test_directions_select_the_same_corners_and_edges(self):
+        mob = VGroup(Square().shift([2, -3, 1]), Square().shift([-4, 1, -2]))
+        box = mob.get_bounding_box().copy()
+        for direction in itertools.product((-2, 0, 3), repeat=3):
+            indices = (np.sign(direction) + 1).astype(int)
+            expected = np.array([box[indices[i], i] for i in range(3)])
+            for value in (direction, list(direction), np.array(direction, dtype=np.float32)):
+                actual = mob.get_bounding_box_point(value)
+                np.testing.assert_array_equal(actual, expected)
+                actual[:] = 123
+                np.testing.assert_array_equal(mob.get_bounding_box(), box)
 
 
 class AffineBoundsTests(unittest.TestCase):

@@ -1523,9 +1523,10 @@ class Mobject(object):
 
     def get_bounding_box_point(self, direction: Vect3) -> Vect3:
         bb = self.get_bounding_box()
-        indices = (np.sign(direction) + 1).astype(int)
+        if not any(direction):
+            return bb[1].copy()
         return np.array([
-            bb[indices[i]][i]
+            bb[2 if direction[i] > 0 else 0 if direction[i] < 0 else 1, i]
             for i in range(3)
         ])
 
