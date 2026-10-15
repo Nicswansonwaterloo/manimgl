@@ -5,7 +5,30 @@ import numpy as np
 
 from manimlib.mobject.geometry import Line, Square
 from manimlib.mobject.mobject import Mobject
-from manimlib.mobject.types.vectorized_mobject import VGroup
+from manimlib.mobject.types.vectorized_mobject import VGroup, VMobject
+
+
+class ShortPathNormalTests(unittest.TestCase):
+    def test_short_paths_have_zero_anchor_area_and_keep_their_normal(self):
+        cases = [
+            ([], [0, 0, 1]),
+            ([[1, 2, 3]], [0, 0, 1]),
+            ([[-1, 0, 0], [0, 0, 0], [1, 0, 0]], [0, 0, 1]),
+            ([[0, 0, -1], [0, 0, 0], [0, 0, 1]], [0, -1, 0]),
+            ([[-1, 0, 0], [0, 1, 0], [1, 0, 0]], [0, 0, -1]),
+            ([[0, 0, 0], [1, 0, 0], [1, 1, 1]], [0, -2**-0.5, 2**-0.5]),
+            ([[2, 2, 2]] * 3, [0, -1, 0]),
+        ]
+        for points, normal in cases:
+            with self.subTest(points=points):
+                path = VMobject().set_points(np.array(points).reshape((-1, 3)))
+                np.testing.assert_array_equal(path.get_area_vector(), np.zeros(3))
+                np.testing.assert_allclose(path.get_unit_normal(refresh=True), normal)
+
+    def test_polygon_area_still_determines_the_normal(self):
+        path = VMobject().set_points_as_corners([[0, 0, 0], [2, 0, 0], [0, 3, 0], [0, 0, 0]])
+        np.testing.assert_allclose(path.get_area_vector(), [0, 0, 3])
+        np.testing.assert_allclose(path.get_unit_normal(refresh=True), [0, 0, 1])
 
 
 class FillColorTests(unittest.TestCase):

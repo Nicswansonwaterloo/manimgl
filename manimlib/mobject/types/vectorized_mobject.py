@@ -1102,7 +1102,8 @@ class VMobject(Mobject):
         # the polygon formed by the anchor points, pointing
         # in a direction perpendicular to the polygon according
         # to the right hand rule.
-        if not self.has_points():
+        # Fewer than three anchors cannot enclose polygonal area.
+        if self.get_num_points() <= 3:
             return np.zeros(3)
 
         area = np.zeros(3)
