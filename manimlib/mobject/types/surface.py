@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import numpy as np
-import trimesh
-import pywavefront
 import logging
 from pathlib import Path
 
@@ -28,6 +26,7 @@ from manimlib.renderer.uniform_block import uniform_block_dtype
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    import trimesh
     from typing import Callable, Iterable, Sequence, Tuple
 
 
@@ -535,6 +534,8 @@ class TexturedGeometry(TexturedSurface):
 
 class ThreeDModel(Group):
     def __init__(self, obj_file: str, height=3):
+        import trimesh
+
         super().__init__()
         obj_file = get_full_three_d_model_path(obj_file)
 
@@ -565,6 +566,7 @@ class ThreeDModel(Group):
         Returns:
             dict: {material_name: texture_filepath}
         """
+        import pywavefront
 
         # Suppress pywavefront warnings if desired
         if suppress_warnings:

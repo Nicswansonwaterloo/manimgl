@@ -3,7 +3,6 @@ from __future__ import annotations
 import itertools as it
 
 import numpy as np
-from scipy.integrate import solve_ivp
 
 from manimlib.constants import FRAME_HEIGHT, FRAME_WIDTH
 from manimlib.constants import DEFAULT_MOBJECT_COLOR
@@ -65,6 +64,8 @@ def get_rgb_gradient_function(
 
 
 def ode_solution_points(function, state0, time, dt=0.01):
+    from scipy.integrate import solve_ivp
+
     solution = solve_ivp(
         lambda t, state: function(state),
         t_span=(0, time),
