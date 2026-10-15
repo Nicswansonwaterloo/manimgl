@@ -258,7 +258,8 @@ class Mobject(object):
         func: Callable[[np.ndarray], np.ndarray],
         about_point: Vect3 | None = None,
         about_edge: Vect3 = ORIGIN,
-        works_on_bounding_box: bool = False
+        works_on_bounding_box: bool = False,
+        preserves_bounding_box_order: bool = False
     ) -> Self:
         if about_point is None and about_edge is not None:
             about_point = self.get_bounding_box_point(about_edge)
@@ -278,9 +279,12 @@ class Mobject(object):
             for key in mob.pointlike_uniform_keys:
                 mob.uniforms.apply(key, moved)
             if box is not None:
-                # Re-derive the corners, since a negative factor swaps which is which
-                corners = moved(box[::2].copy())
-                box[0], box[2] = corners.min(0), corners.max(0)
+                if preserves_bounding_box_order:
+                    box[:] = moved(box)
+                else:
+                    # Re-derive the corners, since a negative factor swaps which is which
+                    corners = moved(box[::2].copy())
+                    box[0], box[2] = corners.min(0), corners.max(0)
                 box[1] = (box[0] + box[2]) / 2
 
         if not works_on_bounding_box:
@@ -915,6 +919,7 @@ class Mobject(object):
             lambda points: points + vector,
             about_edge=None,
             works_on_bounding_box=True,
+            preserves_bounding_box_order=True,
         )
         return self
 
@@ -943,6 +948,7 @@ class Mobject(object):
             about_point=about_point,
             about_edge=about_edge,
             works_on_bounding_box=True,
+            preserves_bounding_box_order=min_scale_factor >= 0,
         )
         for mob in self.get_family():
             mob._handle_scale_side_effects(scale_factor)
@@ -957,7 +963,10 @@ class Mobject(object):
         def func(points):
             points[:, dim] *= factor
             return points
-        self.apply_points_function(func, works_on_bounding_box=True, **kwargs)
+        self.apply_points_function(
+            func, works_on_bounding_box=True,
+            preserves_bounding_box_order=factor >= 0, **kwargs,
+        )
         return self
 
     def rotate_about_origin(self, angle: float, axis: Vect3 = OUT) -> Self:

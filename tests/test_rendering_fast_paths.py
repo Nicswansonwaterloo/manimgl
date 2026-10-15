@@ -8,6 +8,54 @@ from manimlib.mobject.mobject import Mobject
 from manimlib.mobject.types.vectorized_mobject import VGroup, VMobject
 
 
+class AffineBoundsTests(unittest.TestCase):
+    def test_ordered_transforms_match_corner_reordering(self):
+        shift = np.array([0.3, -0.7, 1.2])
+        factors = np.array([0.4, 2.0, 1.5])
+        about = np.array([1.0, -2.0, 0.5])
+        cases = [
+            (lambda m: m.shift(shift), lambda p: p + shift, dict(about_edge=None)),
+            (lambda m: m.scale(factors), lambda p: factors * p, {}),
+            (lambda m: m.scale(0, min_scale_factor=0), lambda p: 0 * p, {}),
+            (lambda m: m.scale(2, about_point=about), lambda p: 2 * p, dict(about_point=about)),
+            (lambda m: m.stretch(0.2, 1), lambda p: p * [1, 0.2, 1], {}),
+        ]
+        for transform, function, kwargs in cases:
+            with self.subTest(transform=transform):
+                actual = VGroup(VGroup(Square().set_fill(["#ff0000", "#0000ff"])),
+                                Square().shift([3, 1, 0]))
+                reference = actual.copy()
+                parent, reference_parent = VGroup(actual), VGroup(reference)
+                parent.get_bounding_box()
+                reference_parent.get_bounding_box()
+                transform(actual)
+                reference.apply_points_function(function, works_on_bounding_box=True, **kwargs)
+                self.assertTrue(parent._needs_new_bounding_box)
+                for mob, expected in zip(actual.get_family(), reference.get_family()):
+                    np.testing.assert_array_equal(mob.data.array, expected.data.array)
+                    np.testing.assert_array_equal(mob.uniforms.array, expected.uniforms.array)
+                    np.testing.assert_array_equal(mob.get_bounding_box(), expected.get_bounding_box())
+                np.testing.assert_array_equal(parent.get_bounding_box(), reference_parent.get_bounding_box())
+
+    def test_negative_factors_keep_bounds_ordered(self):
+        transforms = [
+            lambda m: m.stretch(-2, 0),
+            lambda m: m.scale(-2, min_scale_factor=-3, about_point=np.array([1, 2, 3])),
+            lambda m: m.scale([-2, 0, 3], min_scale_factor=-3),
+        ]
+        for transform in transforms:
+            with self.subTest(transform=transform):
+                square = Square().shift([1, 2, 3])
+                parent = VGroup(square)
+                parent.get_bounding_box()
+                transform(square)
+                points = square.get_points()
+                low, high = points.min(0), points.max(0)
+                expected = np.array([low, (low + high) / 2, high])
+                np.testing.assert_allclose(square.get_bounding_box(), expected)
+                np.testing.assert_allclose(parent.get_bounding_box(), expected)
+
+
 class ShortPathNormalTests(unittest.TestCase):
     def test_short_paths_have_zero_anchor_area_and_keep_their_normal(self):
         cases = [
