@@ -2,8 +2,13 @@ from manimlib import *
 from benchmarks.support.personal_math import reduced_forms
 
 
+class TexCounter(Integer):
+    def char_to_mob(self, char):
+        return Tex(char.replace("–", "-"))
+
+
 class TernaryFormCloud(ThreeDScene):
-    """15s: n=1..51 concentration, e=1..5 dense clouds, prime highlights, halos and orbit."""
+    """16s: n=1..51, e=1..6, two plain clouds, changing TeX digits and orbit."""
     default_camera_config = dict(background_color=BLACK)
 
     def construct(self):
@@ -18,18 +23,18 @@ class TernaryFormCloud(ThreeDScene):
                                 fill_opacity=0.025, stroke_color=TEAL,
                                 stroke_width=1, stroke_opacity=0.4).apply_depth_test()
                          for f in faces])
-        layers = ((0.065, 0.12), (0.04, 0.35), (0.025, 1))
-        clouds = Group(*[DotCloud(radius=r, color=c, opacity=o, anti_alias_width=0.65)
-                         for c in (BLUE, PINK) for r, o in layers])
-        # These layers are a projected density display; blend all halo layers
-        # without letting a foreground halo occlude a bright center.
+        clouds = Group(DotCloud(radius=0.023, color=BLUE),
+                       DotCloud(radius=0.030, color=PINK))
+        # The translucent enclosure must not hide the projected density display.
         clouds.deactivate_depth_test()
         title = Text("REDUCED TERNARY FORMS", font_size=24).to_corner(UR).fix_in_frame()
-        readout = Integer(1, font_size=26)
-        e_readout = Integer(1, font_size=26)
-        counters = VGroup(VGroup(Text("n =", font_size=24), readout).arrange(RIGHT, buff=0.15),
-                          VGroup(Text("e =", font_size=24), e_readout).arrange(RIGHT, buff=0.15))
-        counters.arrange(DOWN, aligned_edge=LEFT, buff=0.15).to_corner(UL).fix_in_frame()
+        readout = TexCounter(1, font_size=26)
+        e_readout = TexCounter(1, font_size=26)
+        counters = VGroup(VGroup(Tex("n =", font_size=24), readout).arrange(RIGHT, buff=0.15),
+                          VGroup(Tex("e =", font_size=24), e_readout).arrange(RIGHT, buff=0.15))
+        counters.arrange(DOWN, aligned_edge=LEFT, buff=0.15).to_corner(UL)
+        counters.add_background_rectangle(color=BLACK, opacity=0.62, buff=0.1)
+        counters.fix_in_frame().set_z_index(10)
         legend = VGroup(Text("Cross coefficients", font_size=20, fill_color=BLUE),
                         Text("Prime discriminant", font_size=20, fill_color=PINK))
         legend.arrange(DOWN, aligned_edge=LEFT, buff=0.1).to_corner(DL).fix_in_frame()
@@ -39,15 +44,12 @@ class TernaryFormCloud(ThreeDScene):
         axes.set_stroke(GREY_B, 0.8, opacity=0.5)
         self.add(shell, axes, counters, title, legend)
         self.add(clouds, set_depth_test=False)
-        stages = [(n, 1, 0.2) for n in range(1, 52)] + [(51, e, 1.2) for e in range(2, 6)]
+        stages = [(n, 1, 0.2) for n in range(1, 52)] + [(51, e, 1.2) for e in range(2, 7)]
         for n, e, duration in stages:
             points, primes = reduced_forms(n, e)
-            size = min(1, np.sqrt(700 / max(1, len(points))))
-            for category in (0, 1):
+            for category, cloud in enumerate(clouds):
                 selected = project(points[primes == bool(category)])
-                for cloud, (radius, _) in zip(clouds[3*category:3*category+3], layers):
-                    cloud.set_points(selected)
-                    cloud.set_radius(max(0.016 if category else 0.008, radius * size))
-            readout.set_value(n).fix_in_frame()
-            e_readout.set_value(e).fix_in_frame()
+                cloud.set_points(selected)
+            readout.set_value(n).fix_in_frame().set_z_index(10)
+            e_readout.set_value(e).fix_in_frame().set_z_index(10)
             self.wait(duration)

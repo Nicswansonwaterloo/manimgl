@@ -118,10 +118,8 @@ class Camera(object):
         light_source_position: Vect3 = np.array([-10, 10, 10]),
         bundle_draws: bool = True,
         draw_together: bool = True,
-        # Although vector graphics handle antialiasing fine
-        # without multisampling, for 3d scenes one might want
-        # to set samples to be greater than 0.
-        samples: int = 0,
+        # Multisampling smooths filled edges, including small 2D dots.
+        samples: int = 4,
     ):
         self.window = window
         self.default_pixel_shape = resolution  # Rename?

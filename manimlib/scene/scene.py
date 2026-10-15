@@ -57,7 +57,7 @@ class Scene(object):
     max_num_saved_states: int = 50
     default_camera_config: dict = dict()
     default_file_writer_config: dict = dict()
-    samples = 0
+    samples = 4
     # Euler angles, in degrees
     default_frame_orientation = (0, 0)
 

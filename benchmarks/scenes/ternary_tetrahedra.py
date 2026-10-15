@@ -2,6 +2,11 @@ from manimlib import *
 from benchmarks.support.personal_math import EDGES, tetra_representatives, tetra_vertices
 
 
+class TexCounter(Integer):
+    def char_to_mob(self, char):
+        return Tex(char.replace("–", "-"))
+
+
 class TernaryTetrahedronWalk(ThreeDScene):
     """15s: all 70 tetrahedron morphs, n=8..17 convergence and e=1..3 destination clouds."""
     default_camera_config = dict(background_color=BLACK)
@@ -25,20 +30,27 @@ class TernaryTetrahedronWalk(ThreeDScene):
             return Group(faces, edges, beads)
 
         points = np.concatenate([project(tetra_vertices(lam))[2:] for lam in tetra_representatives()])
-        destinations = DotCloud(points, radius=0.025, color=GOLD, opacity=0.3, anti_alias_width=0.65)
+        destinations = DotCloud(points, radius=0.025, color=GOLD, opacity=0.3)
         current = tetra((0,)*6)
         labels = VGroup(*[Tex(rf"\lambda_{k+1}", font_size=23) for k in range(6)])
         for label, edge in zip(labels, current[1]):
-            label.rotate(PI / 2, RIGHT)
-            label.set_backstroke(BLACK, 3)
-            label.add_updater(lambda m, dt=0, edge=edge: m.move_to(edge.get_center() + 0.16*OUT)
-                              .set_color(edge.get_stroke_color()))
-        entries = VGroup(*[Integer(0, font_size=25) for _ in range(6)])
+            label.fix_in_frame()
+
+            def follow_edge(mob, *, edge=edge):
+                center = np.mean([bead.get_center() for bead in current[2]], axis=0)
+                outward = edge.get_center() - center
+                anchor = edge.get_center() + 0.22 * normalize(outward)
+                point = self.frame.to_fixed_frame_point(anchor)
+                screen = np.array([point[0], point[1], 0]) / (1 - point[2] / self.frame.get_focal_distance())
+                mob.move_to(screen).set_color(edge.get_stroke_color())
+
+            label.add_updater(follow_edge)
+        entries = VGroup(*[TexCounter(0, font_size=25) for _ in range(6)])
         entries.arrange(RIGHT, buff=0.3).to_corner(DL).fix_in_frame()
         title = Text("TETRAHEDRON · edge weights", font_size=24).to_corner(UL).fix_in_frame()
-        n_value, e_value = Integer(8, font_size=24), Integer(1, font_size=24)
-        parameters = VGroup(Text("n =", font_size=22), n_value,
-                            Text("e =", font_size=22), e_value).arrange(RIGHT, buff=0.15)
+        n_value, e_value = TexCounter(8, font_size=24), TexCounter(1, font_size=24)
+        parameters = VGroup(Tex("n =", font_size=22), n_value,
+                            Tex("e =", font_size=22), e_value).arrange(RIGHT, buff=0.15)
         parameters.to_corner(UR).fix_in_frame()
         axes = ThreeDAxes((-1, 5), (-1, 5), (-1, 5), width=6, height=6, depth=6)
         axes.shift(project(ORIGIN)-axes.c2p(0, 0, 0)).set_stroke(GREY_B, 0.7, opacity=0.4)
