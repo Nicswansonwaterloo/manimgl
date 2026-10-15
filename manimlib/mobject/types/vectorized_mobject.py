@@ -279,7 +279,7 @@ class VMobject(Mobject):
         if color is not None:
             rgbs = [color_to_rgb(c) for c in listify(color)[:2]]
         if opacity is not None:
-            ops = listify(opacity)[:2]
+            ops = [opacity] if isinstance(opacity, (float, int, np.floating)) else listify(opacity)[:2]
         for mob in self.get_family(recurse):
             if set_colors:
                 start = mob.uniforms["fill_rgba"]
@@ -293,7 +293,9 @@ class VMobject(Mobject):
                 mob.uniforms.note_change()
             if border_width is not None:
                 mob.uniforms["fill_border_width"] = float(border_width)
-        if gradient_direction is not None or (set_colors and self.has_fill_gradient()):
+        # A single color and opacity already guarantee equal gradient endpoints.
+        solid_fill = color is not None and opacity is not None and len(rgbs) == len(ops) == 1
+        if gradient_direction is not None or (set_colors and not solid_fill and self.has_fill_gradient()):
             self.set_fill_gradient_points(gradient_direction, recurse)
         return self
 

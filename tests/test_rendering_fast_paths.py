@@ -107,6 +107,19 @@ class FillColorTests(unittest.TestCase):
         self.assertAlmostEqual(float(square.uniforms["fill_rgba"][3]), 0.1)
         self.assertAlmostEqual(float(square.uniforms["fill_rgba_end"][3]), 0.9)
 
+    def test_solid_fill_replaces_gradient_and_honors_explicit_direction(self):
+        for color, opacity in [("#00ff00", 0.4), ("#00ff00", np.float32(0.4)),
+                               (["#00ff00"], [0.4])]:
+            with self.subTest(color=color, opacity=opacity):
+                square = Square().set_fill(["#ff0000", "#0000ff"], [0.2, 0.8],
+                                           gradient_direction=[0, 1, 0])
+                square.set_fill(color, opacity)
+                for key in ("fill_rgba", "fill_rgba_end"):
+                    np.testing.assert_allclose(square.uniforms[key], [0, 1, 0, 0.4])
+                square.set_fill(color, opacity, gradient_direction=[1, 0, 0])
+                np.testing.assert_allclose(square.uniforms["gradient_start"], [-1, 0, 0])
+                np.testing.assert_allclose(square.uniforms["gradient_end"], [1, 0, 0])
+
 
 class LineEndpointTests(unittest.TestCase):
     def test_endpoints_style_and_parent_bounds(self):
