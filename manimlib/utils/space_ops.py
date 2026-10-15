@@ -222,18 +222,30 @@ def get_unit_normal(
     v2: Vect3,
     tol: float = 1e-6
 ) -> Vect3:
-    v1 = normalize(v1)
-    v2 = normalize(v2)
-    cp = cross(v1, v2)
-    cp_norm = get_norm(cp)
+    # Scalar arithmetic avoids allocating intermediate arrays for these 3D vectors.
+    x1, y1, z1 = map(float, v1)
+    x2, y2, z2 = map(float, v2)
+    norm1 = math.hypot(x1, y1, z1)
+    norm2 = math.hypot(x2, y2, z2)
+    if norm1 > 0:
+        x1, y1, z1 = x1 / norm1, y1 / norm1, z1 / norm1
+    else:
+        x1 = y1 = z1 = 0.0
+    if norm2 > 0:
+        x2, y2, z2 = x2 / norm2, y2 / norm2, z2 / norm2
+    else:
+        x2 = y2 = z2 = 0.0
+    x = y1 * z2 - z1 * y2
+    y = z1 * x2 - x1 * z2
+    z = x1 * y2 - y1 * x2
+    cp_norm = math.hypot(x, y, z)
     if cp_norm < tol:
         # Vectors align, so find a normal to them in the plane shared with the z-axis
-        new_cp = cross(cross(v1, OUT), v1)
-        new_cp_norm = get_norm(new_cp)
-        if new_cp_norm < tol:
+        x, y, z = -x1 * z1, -y1 * z1, x1 * x1 + y1 * y1
+        cp_norm = math.hypot(x, y, z)
+        if cp_norm < tol:
             return DOWN
-        return new_cp / new_cp_norm
-    return cp / cp_norm
+    return np.array([x, y, z]) / cp_norm
 
 
 ###
