@@ -14,6 +14,7 @@ from manimlib.utils.color import color_to_hex
 from manimlib.utils.color import hex_to_int
 from manimlib.utils.tex_file_writing import latex_to_svg
 from manimlib.utils.tex import num_tex_symbols
+from manimlib.utils.tex import split_tex_operators
 from manimlib.logger import log
 
 from typing import TYPE_CHECKING
@@ -229,7 +230,13 @@ class Tex(StringMobject):
             # And most single characters, with these exceptions
             r"[^\^\{\}\s\_\$\\\&]",
         ))
-        return re.findall(pattern, self.string)
+        # An operator is one matching unit: splitting its roman letters can
+        # split a ligature and shift all subsequent glyph offsets.
+        return [
+            symbol
+            for is_operator, chunk in split_tex_operators(self.string)
+            for symbol in ([chunk] if is_operator else re.findall(pattern, chunk))
+        ]
 
     def make_number_changeable(
         self,

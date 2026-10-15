@@ -159,12 +159,16 @@ class TransformMatchingStrings(TransformMatchingParts):
 
         # Nullify any intersections with those matches in the two symbol lists
         for sub_source, sub_target in blocks:
-            for i in range(len(syms1)):
-                if i < len(source) and source[i] in sub_source.family_members_with_points():
-                    syms1[i] = "Null1"
-            for j in range(len(syms2)):
-                if j < len(target) and target[j] in sub_target.family_members_with_points():
-                    syms2[j] = "Null2"
+            for mob, submob, syms, counts, sentinel in (
+                (source, sub_source, syms1, counts1, "Null1"),
+                (target, sub_target, syms2, counts2, "Null2"),
+            ):
+                members = submob.family_members_with_points()
+                offset = 0
+                for i, count in enumerate(counts):
+                    if any(part in members for part in mob[offset:offset + count]):
+                        syms[i] = sentinel
+                    offset += count
 
         # Group together longest matching substrings
         while True:
