@@ -123,8 +123,7 @@ def rotate_vector(
         ])
         return np.dot(vector, matrix.T)
 
-    rot = Rotation.from_rotvec(angle * normalize(axis))
-    return np.dot(vector, rot.as_matrix().T)
+    return np.dot(vector, rotation_matrix(angle, axis).T)
 
 
 def rotate_vector_2d(vector: Vect2, angle: float) -> Vect2:
@@ -145,6 +144,8 @@ def rotation_matrix(angle: float, axis: Vect3) -> Matrix3x3:
     """
     Rotation in R^3 about a specified axis of rotation.
     """
+    if axis[0] == axis[1] == 0 and axis[2] != 0:
+        return rotation_about_z(angle if axis[2] > 0 else -angle)
     return Rotation.from_rotvec(angle * normalize(axis)).as_matrix()
 
 
