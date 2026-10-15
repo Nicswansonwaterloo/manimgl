@@ -2,7 +2,7 @@ from manimlib import *
 
 
 class SpanningVectorRedraw(Scene):
-    """8s: always-redrawn vector sums, per-frame TeX matrices and accumulated ghost arrows."""
+    """8s: always-redrawn vector sums, native numeric readouts and accumulated ghost arrows."""
 
     def construct(self):
         plane = NumberPlane((-7,7), (-5,5), width=12, height=6)
@@ -17,12 +17,21 @@ class SpanningVectorRedraw(Scene):
             Arrow(origin, endpoints()[0], buff=0, fill_color=RED),
             Arrow(endpoints()[0], endpoints()[1], buff=0, fill_color=BLUE),
             Arrow(origin, endpoints()[1], buff=0, fill_color=YELLOW)))
-        def equation():
+        a_value, b_value = [DecimalNumber(value, num_decimal_places=1, font_size=30)
+                            for value in coefficients()]
+        equation = VGroup(a_value, Tex(r"\begin{bmatrix}2\\1\end{bmatrix}", font_size=30),
+                          Tex("+(", font_size=30), b_value, Tex(")", font_size=30),
+                          Tex(r"\begin{bmatrix}-1\\3\end{bmatrix}", font_size=30))
+        def update_readout(readout):
             a, b = coefficients()
-            return Tex(rf"{a:.1f}\begin{{bmatrix}}2\\1\end{{bmatrix}}"
-                       rf"+({b:.1f})\begin{{bmatrix}}-1\\3\end{{bmatrix}}",
-                       font_size=30).to_edge(DOWN).add_background_rectangle(opacity=0.9, buff=0.15)
-        readout = always_redraw(equation)
+            a_value.set_value(a)
+            b_value.set_value(b)
+            equation.arrange(RIGHT, buff=0.06).to_edge(DOWN)
+            readout[0].replace(equation, stretch=True).set_width(equation.get_width() + 0.3)
+            readout[0].set_height(equation.get_height() + 0.3)
+        equation.arrange(RIGHT, buff=0.06).to_edge(DOWN)
+        readout = VGroup(BackgroundRectangle(equation, opacity=0.9, buff=0.15), equation)
+        readout.add_updater(update_readout)
         self.add(plane, arrows, readout)
         for k in range(8):
             self.play(clock.animate.set_value((k+1)*TAU/8), run_time=1, rate_func=linear)

@@ -172,7 +172,9 @@ def compile_video(clips, destination, scratch, timeout):
     partial = destination.with_name(destination.stem + "-partial.mp4")
     with (scratch / "concat.log").open("w") as log:
         process = subprocess.Popen(["ffmpeg", "-nostdin", "-y", "-loglevel", "error", "-f", "concat",
-                                    "-safe", "1", "-i", str(manifest), "-c", "copy", "-movflags", "+faststart", str(partial)],
+                                    "-safe", "1", "-i", str(manifest), "-an", "-c:v", "libx264",
+                                    "-pix_fmt", "yuv420p", "-crf", "18", "-threads", "1",
+                                    "-movflags", "+faststart", str(partial)],
                                    stdout=log, stderr=subprocess.STDOUT, start_new_session=os.name == "posix")
         try:
             process.wait(timeout=timeout)
