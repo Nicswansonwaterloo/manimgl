@@ -70,7 +70,7 @@ class StructuredArray(object):
         return len(self.array)
 
     def __contains__(self, key: str) -> bool:
-        return key in self.keys()
+        return key in self.array.dtype.fields and not key.startswith("_")
 
     def __iter__(self) -> Iterator[str]:
         return iter(self.keys())
