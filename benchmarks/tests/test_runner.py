@@ -32,37 +32,72 @@ class RunnerTests(unittest.TestCase):
                     self.assertTrue((output / f"logs/{name}.log").exists())
                     self.assertTrue((output / f"videos/{name}.mp4").exists())
 
-    def test_all_default_exports_precede_separate_lossless_renders(self):
+    def test_cli_has_only_baseline_and_scene_selection(self):
+        with patch("sys.argv", ["run.py", "--only", "Solids3D"]):
+            self.assertEqual(run.parse_args().only, ["Solids3D"])
+        for arguments in (["--compile-video"], ["--output", "x"], ["--baseline", "--only", "A"]):
+            with patch("sys.argv", ["run.py", *arguments]), self.assertRaises(SystemExit):
+                run.parse_args()
+
+    def test_baseline_cleanup_shares_one_reference(self):
         with tempfile.TemporaryDirectory() as temporary:
-            args = argparse.Namespace(compare=None, scene_file=Path("unused.py"), only=None,
-                                      list=False, output=Path(temporary) / "results",
-                                      resolution="640x360", fps=15, compile_video=False)
-            scenes = [{"name": "A"}, {"name": "B"}]
+            output = Path(temporary)
+            runs = []
+            for phase in ("first", "cached"):
+                (output / f"{phase}.mp4").write_bytes(phase.encode())
+                runs.append(dict(name="Case", phase=phase, status="ok", video=f"{phase}.mp4",
+                                 visual={"passed": True, "sha256": phase}))
+            run.clean_successful_artifacts({"runs": runs}, output, True)
+            self.assertEqual(list(output.iterdir()), [output / "first.mp4"])
+            self.assertEqual(runs[1]["video"], runs[0]["video"])
+            self.assertEqual(runs[1]["visual"]["sha256"], "first")
+
+    def test_failed_first_baseline_keeps_cached_diagnostic(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary)
+            (output / "cached.mp4").write_bytes(b"movie")
+            runs = [dict(name="Case", phase="first", status="failed", visual={"passed": False}),
+                    dict(name="Case", phase="cached", status="ok", video="cached.mp4",
+                         visual={"passed": True})]
+            run.clean_successful_artifacts({"runs": runs}, output, True)
+            self.assertTrue((output / "cached.mp4").exists())
+
+    def test_baseline_replaces_results_separates_timing_and_compiles(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            output = root / "results" / "baseline"
+            output.mkdir(parents=True)
+            (output / "stale.txt").write_text("disposable")
+            args = argparse.Namespace(baseline=True, only=None, resolution="854x480", fps=15, timeout=300)
             report = {"runs": [], "interrupted": False}
-            calls = []
-            def fake_run(scene, iteration, args, output, scratch, clip, *, lossless=False):
-                calls.append((scene["name"], iteration, lossless, scratch))
-                clip.write_bytes(b"video")
-                return {"name": scene["name"], "iteration": iteration,
-                        "phase": "first" if iteration == 1 else "cached", "status": "ok",
-                        "frames": 3, "animation_seconds": 0.2,
-                        "render_seconds": 99 if lossless else 1, "wall_seconds": 100 if lossless else 2}
-            with patch.object(run, "parse_args", return_value=args), \
-                 patch.object(run, "discover", return_value=scenes), \
+            def render(scene, iteration, args, output, scratch, clip, *, lossless=False):
+                clip.write_bytes(b"movie")
+                return dict(name=scene["name"], iteration=iteration, phase="first" if iteration == 1 else "cached",
+                            status="ok", wall_seconds=100 if lossless else 1)
+            def validate(report, *args):
+                for row in report["runs"]:
+                    row["visual"] = {"passed": True, "sha256": "same"}
+                return True
+            with patch.object(run, "HERE", root), patch.object(run, "parse_args", return_value=args), \
+                 patch.object(run, "discover", return_value=[{"name": "Case"}]), \
                  patch.object(run, "make_report", return_value=report), \
-                 patch.object(run, "run_one", side_effect=fake_run), \
-                 patch.object(run, "save_report"), patch.object(run, "print_results"), \
-                 patch("benchmarks.support.visual.load_reference", return_value=(Path(temporary), {})), \
-                 patch("benchmarks.support.visual.validate_suite", return_value=True), \
+                 patch.object(run, "prepare_assets"), patch.object(run, "save_report"), \
+                 patch.object(run, "print_results"), patch.object(run, "CONSOLE"), \
+                 patch.object(run, "run_one", side_effect=render) as render_mock, \
+                 patch.object(run, "compile_video") as compile_mock, \
                  patch("benchmarks.support.visual.inspect_video", return_value={"errors": []}), \
-                 patch.object(run, "CONSOLE"):
+                 patch("benchmarks.support.visual.validate_suite", side_effect=validate):
                 self.assertEqual(run.main(), 0)
-            expected = [("A", 1), ("A", 2), ("B", 1), ("B", 2)]
-            self.assertEqual([c[:3] for c in calls],
-                             [(n, i, False) for n, i in expected] + [(n, i, True) for n, i in expected])
-            self.assertNotEqual(calls[0][3], calls[4][3])
-            self.assertEqual([r["render_seconds"] for r in report["runs"]], [1] * 4)
-            self.assertEqual([r["validation_render"]["render_seconds"] for r in report["runs"]], [99] * 4)
+            self.assertEqual(render_mock.call_count, 4)
+            self.assertEqual([c.kwargs.get("lossless", False) for c in render_mock.call_args_list],
+                             [False, False, True, True])
+            self.assertNotEqual(render_mock.call_args_list[0].args[4], render_mock.call_args_list[2].args[4])
+            self.assertEqual([r["wall_seconds"] for r in report["runs"]], [1, 1])
+            self.assertEqual([r["validation_render"]["wall_seconds"] for r in report["runs"]], [100, 100])
+            compile_mock.assert_called_once()
+            self.assertEqual(compile_mock.call_args.args[1], output / "suite.mp4")
+            self.assertFalse((output / "stale.txt").exists())
+            self.assertEqual(len(list((output / "reference-videos").iterdir())), 1)
 
     def test_forty_nine_distinct_workloads(self):
         scenes = run.discover()
@@ -142,20 +177,16 @@ pathlib.Path(os.environ["MANIM_BENCHMARK_METRICS"]).write_text(json.dumps(metric
                                       timeout=0.2 if mode == "timeout" else 10)
             clip = scratch / "retained.mp4"
             with patch.object(run, "WORKER", harness / "worker.py"):
-                result = run.run_one({"name": "Case", "file": "case.py"}, 1, args, output, scratch, clip,
-                                     lossless=lossless)
+                result = run.run_one({"name": "Case", "file": "case.py"}, 1, args, output, scratch, clip, lossless=lossless)
             self.assertEqual(list(scratch.iterdir()), [clip])
             self.assertTrue((output / result["log"]).exists())
-            self.assertTrue(result["movies_deleted"])
             return result
 
     def test_success_deletes_original_movie_and_retains_only_join_input(self):
         self.assertEqual(self.exercise_subprocess("success")["status"], "ok")
 
-    def test_validation_worker_gets_lossless_override(self):
-        result = self.exercise_subprocess("success", lossless=True)
-        self.assertEqual(result["status"], "ok")
-        self.assertIn("-validation.log", result["log"])
+    def test_lossless_render_uses_separate_encoder(self):
+        self.assertEqual(self.exercise_subprocess("success", lossless=True)["status"], "ok")
 
     def test_failure_deletes_partial_movie(self):
         self.assertEqual(self.exercise_subprocess("failure")["status"], "failed")

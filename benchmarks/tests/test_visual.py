@@ -11,7 +11,6 @@ import numpy as np
 from benchmarks.support.visual import (
     DEFAULT_TOLERANCES, checksum, compare_video, frame_metrics, inspect_video, validate_suite,
 )
-from benchmarks.support.review_videos import prepare_review_videos
 
 
 def write_video(path, values, fps=15):
@@ -45,24 +44,6 @@ class VisualTests(unittest.TestCase):
                                        for phase in ("first", "cached")]}
                     self.assertFalse(validate_suite(report, root, DEFAULT_TOLERANCES))
                     self.assertTrue(all(not r["visual"]["passed"] for r in report["runs"]))
-
-    @unittest.skipUnless(shutil.which("ffmpeg"), "FFmpeg unavailable")
-    def test_review_copy_is_compatible_and_preserves_lossless_reference(self):
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            (root / "videos").mkdir()
-            original = root / "videos/Case-01.mp4"
-            write_video(original, [0, 120, 255])
-            digest = checksum(original)
-            run = {"name": "Case", "phase": "first", "video": "videos/Case-01.mp4",
-                   "visual": {"passed": True}}
-            prepare_review_videos({"runs": [run]}, root, baseline=True)
-            self.assertEqual(checksum(root / run["video"]), digest)
-            self.assertEqual(run["video"], "reference-videos/Case-01.mp4")
-            with av.open(str(root / run["preview"])) as movie:
-                frames = list(movie.decode(video=0))
-                self.assertEqual(len(frames), 3)
-                self.assertEqual(frames[0].format.name, "yuv420p")
 
     def test_small_pixel_noise_passes_but_removed_object_fails(self):
         reference = np.zeros((100, 100, 3), np.uint8)
@@ -118,9 +99,10 @@ class VisualTests(unittest.TestCase):
             old = report(baseline)
             self.assertTrue(validate_suite(old, baseline, DEFAULT_TOLERANCES))
             self.assertTrue(all("tolerances" in r["visual"] for r in old["runs"]))
+            (baseline / "cached.mp4").unlink()
             new = report(candidate, changed=True)
             self.assertFalse(validate_suite(new, candidate, DEFAULT_TOLERANCES, (baseline, old)))
-            self.assertTrue((candidate / "validation.json").exists())
+            self.assertFalse((candidate / "validation.json").exists())
             self.assertEqual(len(list((candidate / "visual-diffs").rglob("*-diff-4x.png"))), 2)
 
 

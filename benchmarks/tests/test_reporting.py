@@ -24,6 +24,20 @@ class ReportingTests(unittest.TestCase):
         self.assertIn("2m 03s", console.print.call_args.args[0])
         self.assertIn("Validation: 1m 05s", console.print.call_args.args[0])
 
+    def test_saved_report_contains_no_duplicate_measurements(self):
+        import json
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            report = {"scenes": [{"name": "Case", "file": "unused", "description": "unused"}],
+                      "runs": [{"name": "Case", "phase": "first", "status": "ok",
+                                "wall_seconds": 1.25, "visual": {"passed": True}}]}
+            reporting.save_report(report, root)
+            self.assertEqual([p.name for p in root.iterdir()], ["results.json"])
+            saved = json.loads((root / "results.json").read_text())
+            self.assertNotIn("summary", saved)
+            self.assertEqual(saved["scenes"], [{"name": "Case"}])
+            self.assertEqual(reporting.summarize(saved["runs"]), report["summary"])
+
     def test_display_averages_resources_but_preserves_separate_timings(self):
         runs = [{"name": "Case", "phase": phase, "status": "ok", "wall_seconds": seconds,
                  "render_seconds": seconds - 1, "render_fps": seconds,
@@ -44,7 +58,7 @@ class ReportingTests(unittest.TestCase):
         self.assertIsNone(row["cpu_percent"])
 
     def report(self, seconds=10):
-        return {"schema_version": 6, "resolution": "1920x1080", "fps": 60,
+        return {"schema_version": 7, "resolution": "1920x1080", "fps": 60,
                 "encoding": {"crf": 23}, "workload_sha256": "same",
                 "phases": ["first", "cached"], "scenes": [{"name": "Case"}], "interrupted": False,
                 "summary": [{"name": "Case", "phase": phase, "status": "ok",

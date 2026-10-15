@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
-"""Render benchmarks sequentially, or compare two saved runs."""
+"""Render first/cached benchmarks and check every frame against the baseline."""
 from __future__ import annotations
 
 import argparse
 import ast
 from datetime import datetime, timezone
-import fnmatch
 import json
 import os
 from pathlib import Path
@@ -46,36 +45,14 @@ def discover(scene_file=None):
     return scenes
 
 
-def positive_int(value):
-    value = int(value)
-    if value < 1:
-        raise argparse.ArgumentTypeError("must be at least 1")
-    return value
-
-
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--list", action="store_true")
-    parser.add_argument("--compare", nargs=2, type=Path, metavar=("BASELINE", "CANDIDATE"),
-                        help="compare two result directories or results.json files; no rendering")
-    parser.add_argument("--scene-file", type=Path, help="benchmark scenes from a file, e.g. example_scenes.py")
-    parser.add_argument("--only", nargs="+", metavar="NAME", help="scene names or quoted globs")
-    parser.add_argument("--resolution", default="854x480")
-    parser.add_argument("--fps", type=positive_int, default=15)
-    parser.add_argument("--timeout", type=positive_int, default=300, help="seconds per scene")
-    parser.add_argument("--output", type=Path, help="new directory for JSON, CSV and logs")
-    parser.add_argument("--compile-video", action="store_true", help="keep suite.mp4 inside the result directory")
-    parser.add_argument("--baseline", action="store_true",
-                        help="create the visual reference; subsequent normal runs check it automatically")
+    parser.add_argument("--baseline", action="store_true", help="replace the baseline and compile its preview")
+    parser.add_argument("--only", nargs="+", metavar="NAME", help="run selected scene names")
     args = parser.parse_args()
-    if args.baseline and (args.compare or args.output or args.only or args.scene_file):
-        parser.error("--baseline creates the complete built-in suite at its standard location; use it on its own")
-    try:
-        width, height = map(int, args.resolution.split("x"))
-        if min(width, height) < 2 or width % 2 or height % 2:
-            raise ValueError
-    except ValueError:
-        parser.error("--resolution requires even dimensions, for example 1920x1080")
+    if args.baseline and args.only:
+        parser.error("--baseline builds the full suite; use --only for comparisons")
+    args.resolution, args.fps, args.timeout = "854x480", 15, 300
     return args
 
 
@@ -90,8 +67,8 @@ def stop_process(process):
     process.wait()
 
 
-def run_one(scene, iteration, args, output, scratch, retained_clip=None, *, lossless=False):
-    label = f"{scene['name']}-{iteration:02d}" + ("-validation" if lossless else "")
+def run_one(scene, iteration, args, output, scratch, retained_clip, *, lossless=False):
+    label = f"{scene['name']}-{iteration:02d}" + ("-lossless" if lossless else "")
     log_path = output / "logs" / f"{label}.log"
     scene_cache = scratch / "scene-caches" / scene["name"]
     readings = {"rss": [], "gpu": {}}
@@ -139,16 +116,12 @@ def run_one(scene, iteration, args, output, scratch, retained_clip=None, *, loss
                    and worker.get("scene") == scene["name"] and not worker.get("interrupted")
                    and worker.get("encoder_returncode") == 0 and worker.get("frames_written", 0) > 0
                    and movie.exists() and movie.stat().st_size > 0)
-        size = movie.stat().st_size if movie.exists() else 0
         if movie.exists() and retained_clip:
             shutil.copyfile(movie, retained_clip)  # Outside measured time.
-    gpu = [{"id": uuid, "uuid": uuid if values["provider"] == "nvidia-smi" else None,
-            "name": values["name"], "provider": values["provider"], "scope": "device-wide",
-            "samples": len(values["utilization"]),
-            "mean_utilization_percent": statistics.mean(values["utilization"]) if values["utilization"] else None} for uuid, values in readings["gpu"].items()]
     render_time = worker.get("scene_run_seconds")
     cpu_time = worker.get("cpu_seconds")
-    utilization = [device["mean_utilization_percent"] for device in gpu if device["mean_utilization_percent"] is not None]
+    utilization = [statistics.mean(device["utilization"]) for device in readings["gpu"].values()
+                   if device["utilization"]]
     return {"name": scene["name"], "iteration": iteration, "phase": "first" if iteration == 1 else "cached",
             "status": "ok" if success else "timeout" if timed_out else "failed",
             "wall_seconds": wall, "render_seconds": render_time,
@@ -156,15 +129,9 @@ def run_one(scene, iteration, args, output, scratch, retained_clip=None, *, loss
             "render_fps": worker.get("frames_written", 0) / render_time if render_time else None,
             "cpu_percent": 100 * cpu_time / wall if cpu_time is not None else None,
             "tree_peak_mib": max(readings["rss"]) / 2**20 if readings["rss"] else None,
-            "worker_peak_mib": worker.get("worker_peak_rss_bytes", 0) / 2**20 if worker.get("worker_peak_rss_bytes") else None,
-            "gpu": gpu or None, "notes": sorted(notes), "video_bytes": size, "movies_deleted": True,
-            "adapter": worker.get("adapter"),
-            "encoding": worker.get("encoding"),
-            # A single device can be displayed unambiguously. Multi-GPU readings
-            # remain per-device in JSON instead of conflating unrelated adapters.
-            "device_gpu_utilization_percent": utilization[0] if len(gpu) == 1 and utilization else None,
-            "import_seconds": worker.get("import_seconds"), "scene_init_seconds": worker.get("scene_init_seconds"),
+            "device_gpu_utilization_percent": utilization[0] if len(utilization) == 1 else None,
             "animation_seconds": worker.get("animation_seconds"), "msaa_samples": worker.get("msaa_samples"),
+            "adapter": worker.get("adapter"),
             "log": str(log_path.relative_to(output))}
 
 
@@ -175,8 +142,7 @@ def render_validation(report, scenes, args, output, scratch):
 
     validation_scratch = scratch / "validation"
     validation_scratch.mkdir()
-    if not args.scene_file:
-        prepare_assets(validation_scratch / "assets")
+    prepare_assets(validation_scratch / "assets")
     by_name = {scene["name"]: scene for scene in scenes}
     for measured in report["runs"]:
         errors = []
@@ -196,7 +162,6 @@ def render_validation(report, scenes, args, output, scratch):
         measured["validation_render"] = validation
         if clip.exists():
             measured["video"] = str(clip.relative_to(output))
-            measured["movies_deleted"] = False
         for key in ("frames", "animation_seconds", "msaa_samples", "adapter"):
             if measured.get(key) != validation.get(key):
                 errors.append(f"Timed and validation renders differ: {key}")
@@ -226,119 +191,76 @@ def compile_video(clips, destination, scratch, timeout):
 
 def main():
     args = parse_args()
-    if args.compare:
-        compare(*args.compare)
-        return 0
-    scenes = discover(args.scene_file)
-    for pattern in args.only or []:
-        if not any(fnmatch.fnmatchcase(scene["name"], pattern) for scene in scenes):
-            raise ValueError(f"No scene matches {pattern!r}; use --list")
-    scenes = [scene for scene in scenes if not args.only or any(
-        fnmatch.fnmatchcase(scene["name"], pattern) for pattern in args.only)]
-    if not scenes:
-        raise ValueError("No benchmark scenes found")
-    if args.list:
-        for scene in scenes:
-            CONSOLE.print(f"{scene['name']:27} {scene['description']}")
-        return 0
+    scenes = discover()
+    unknown = set(args.only or []) - {s["name"] for s in scenes}
+    if unknown:
+        raise ValueError(f"Unknown scenes: {', '.join(sorted(unknown))}")
+    scenes = [s for s in scenes if not args.only or s["name"] in args.only]
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
-    visual_baseline = getattr(args, "baseline", False)
-    baseline_path = HERE / "results" / "visual-baseline"
-    output = (baseline_path if visual_baseline else args.output or HERE / "results" / timestamp).resolve()
+    baseline_path = HERE / "results" / "baseline"
+    output = baseline_path if args.baseline else HERE / "results" / timestamp
     report = make_report(args, scenes, ROOT, timestamp)
-    reference = None
     from benchmarks.support.visual import DEFAULT_TOLERANCES, load_reference, validate_suite
-    tolerances = dict(DEFAULT_TOLERANCES)
-    if not visual_baseline:
-        # Fail before rendering if this isn't a compatible, intact reference.
-        reference = load_reference(baseline_path, report)
-    elif output.exists():
-        raise ValueError("A visual baseline already exists. Move it aside before creating a replacement.")
-    output.mkdir(parents=True, exist_ok=False)
-    (output / "logs").mkdir()
-    (output / "reference-videos").mkdir()
-    (output / "exports").mkdir()
+    reference = None if args.baseline else load_reference(baseline_path, report)
+    if args.baseline and output.exists():
+        shutil.rmtree(output)
+    for folder in ("logs", "reference-videos", "exports"):
+        (output / folder).mkdir(parents=True)
     CONSOLE.rule("[bold cyan]ManimGL Render Benchmark")
-    CONSOLE.print(f"[bold]{args.resolution} · {args.fps} fps · {len(scenes)} scenes · first run + cached repeat[/bold]\n"
-                  "One renderer at a time · movie encoding included · temporary data deleted")
-    CONSOLE.print("Timed exports use default encoding · separate lossless renders validate every frame afterward")
-    clips = {}
-    failed = False
-    validation_started = None
+    CONSOLE.print(f"{args.resolution} · {args.fps} fps · {len(scenes)} scenes · first + cached")
+    CONSOLE.print("Default encoder timings · separate untimed lossless renders validate every frame")
+    valid = False
     with tempfile.TemporaryDirectory(prefix="manim-benchmark-") as temporary:
         scratch = Path(temporary)
         try:
-            if not args.scene_file:
-                prepare_assets(scratch / "assets")
+            prepare_assets(scratch / "assets")
             for number, scene in enumerate(scenes, 1):
                 for iteration in (1, 2):
                     clip = output / "exports" / f"{scene['name']}-{iteration:02d}.mp4"
-                    phase_label = "first run" if iteration == 1 else "cached repeat"
-                    with CONSOLE.status(f"[{number}/{len(scenes)}] {scene['name']} · {phase_label}"):
+                    with CONSOLE.status(f"[{number}/{len(scenes)}] {scene['name']} · {'first' if iteration == 1 else 'cached'}"):
                         result = run_one(scene, iteration, args, output, scratch, clip)
                     report["runs"].append(result)
                     if clip.exists():
                         result["export_video"] = str(clip.relative_to(output))
-                        result["movies_deleted"] = False
-                    if len(report["runs"]) == 1 and result.get("adapter"):
-                        adapter = result["adapter"]
-                        CONSOLE.print(f"GPU: {adapter.get('device')} · {adapter.get('backend_type')}")
-                    if args.compile_video and result["status"] == "ok" and scene["name"] not in clips:
-                        # The concat manifest uses filenames in the scratch directory.
-                        join_clip = scratch / f"{number:02d}-{scene['name']}.mp4"
-                        shutil.copyfile(clip, join_clip)
-                        clips[scene["name"]] = join_clip
                     if result["status"] != "ok":
                         CONSOLE.print(f"[red]{scene['name']}: {result['status']}[/red] · {output / result['log']}")
                     save_report(report, output)
-            if args.compile_video:
-                if len(clips) != len(scenes):
-                    failed = True
-                    report["compilation_error"] = "Some selected scenes had no successful render"
-                    CONSOLE.print("[red]Combined video skipped: some scenes failed.[/red]")
-                else:
-                    compile_video([clips[scene["name"]] for scene in scenes], output / "suite.mp4", scratch, args.timeout)
-                    report["video"] = "suite.mp4"
-            validation_started = time.perf_counter()
-            render_validation(report, scenes, args, output, scratch)
+            started = time.perf_counter()
+            try:
+                render_validation(report, scenes, args, output, scratch)
+                with CONSOLE.status("Validating every frame"):
+                    valid = validate_suite(report, output, DEFAULT_TOLERANCES, reference)
+            finally:
+                report["validation_seconds"] = time.perf_counter() - started
+            if args.baseline and valid:
+                clips = []
+                for run in report["runs"]:
+                    if run["phase"] == "first":
+                        clip = scratch / f"{run['name']}.mp4"
+                        shutil.copyfile(output / run["video"], clip)
+                        clips.append(clip)
+                with CONSOLE.status("Compiling baseline preview"):
+                    compile_video(clips, output / "suite.mp4", scratch, args.timeout)
+                report["video"] = "suite.mp4"
         except KeyboardInterrupt:
             report["interrupted"] = True
         finally:
+            clean_successful_artifacts(report, output, args.baseline)
             save_report(report, output)
-    if not report["interrupted"]:
-        try:
-            with CONSOLE.status("Checking decoded videos (outside render timings)"):
-                valid = validate_suite(report, output, tolerances, reference)
-            from benchmarks.support.review_videos import prepare_review_videos
-            with CONSOLE.status("Preparing compatible review videos (outside render timings)"):
-                prepare_review_videos(report, output, visual_baseline)
-            failed = failed or not valid
-            CONSOLE.print(f"Visual {'comparison' if reference else 'reference checks'}: "
-                          f"{'PASS' if valid else 'FAIL'} · {output / 'validation.json'}")
-            for run in report["runs"]:
-                if run.get("visual", {}).get("passed") is False:
-                    CONSOLE.print(f"[red]{run['name']} / {run['phase']}: "
-                                  f"{'; '.join(run['visual']['errors'])}[/red]")
-            if visual_baseline and valid:
-                CONSOLE.print("Review the retained videos before accepting this reference as visually correct.")
-        except KeyboardInterrupt:
-            report["interrupted"] = True
-        finally:
-            report["validation_seconds"] = time.perf_counter() - validation_started
-            save_report(report, output)
-    elif validation_started is not None:
-        report["validation_seconds"] = time.perf_counter() - validation_started
-    clean_successful_artifacts(report, output, visual_baseline)
-    save_report(report, output)
     print_results(report)
-    CONSOLE.print(f"Reports: {output}")
+    CONSOLE.print(f"Visual checks: {'PASS' if valid else 'FAIL'} · {output}")
+    for run in report["runs"]:
+        if run.get("visual", {}).get("errors"):
+            CONSOLE.print(f"[red]{run['name']} / {run['phase']}: {'; '.join(run['visual']['errors'])}[/red]")
+    if reference and not report["interrupted"]:
+        compare(baseline_path, output)
     if report.get("video"):
-        CONSOLE.print(f"Combined video: {output / report['video']}")
-    return 130 if report["interrupted"] else int(failed or any(run["status"] != "ok" for run in report["runs"]))
+        CONSOLE.print(f"Baseline preview: {output / report['video']}")
+    return 130 if report["interrupted"] else int(not valid)
 
 
 def clean_successful_artifacts(report, output, baseline=False):
-    """Keep reference videos and diagnostics; never discard an unchecked run."""
+    first = {r["name"]: r for r in report["runs"] if r.get("phase") == "first"}
     for run in report["runs"]:
         if run["status"] != "ok" or run.get("visual", {}).get("passed") is not True:
             continue
@@ -349,11 +271,17 @@ def clean_successful_artifacts(report, output, baseline=False):
             (output / validation.pop("log")).unlink(missing_ok=True)
         if run.get("export_video"):
             (output / run.pop("export_video")).unlink(missing_ok=True)
-        if not baseline and run.get("video"):
+        if baseline and run.get("phase") == "cached":
+            source = first.get(run["name"], {})
+            if not source.get("video") or source.get("visual", {}).get("passed") is not True:
+                continue
+        if run.get("video") and (not baseline or run.get("phase") == "cached"):
             (output / run.pop("video")).unlink(missing_ok=True)
-            run["movies_deleted"] = True
-    for name in ("logs", "videos", "reference-videos", "exports"):
-        folder = output / name
+            if baseline:
+                source = first[run["name"]]
+                run["video"] = source["video"]
+                run["visual"]["sha256"] = source["visual"]["sha256"]
+    for folder in (output / "logs", output / "reference-videos", output / "exports"):
         if folder.is_dir() and not any(folder.iterdir()):
             folder.rmdir()
 

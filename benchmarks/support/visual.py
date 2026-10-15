@@ -166,7 +166,7 @@ def validate_suite(report, output, tolerances, reference=None):
     reference_runs = {}
     if reference:
         root, baseline = reference
-        reference_runs = {(r["name"], r["phase"]): r for r in baseline["runs"]}
+        reference_runs = {r["name"]: r for r in baseline["runs"] if r["phase"] == "first"}
     results = []
     for run in report["runs"]:
         result = {"name": run["name"], "phase": run["phase"], "passed": False, "errors": []}
@@ -182,7 +182,7 @@ def validate_suite(report, output, tolerances, reference=None):
             movie = video_path(output, run)
             result.update(inspect_video(movie, run, report, tolerances["duration_tolerance"]))
             if reference:
-                old = reference_runs[(run["name"], run["phase"])]
+                old = reference_runs[run["name"]]
                 metadata = old["visual"]
                 scene_tolerances = metadata["tolerances"]
                 result["tolerances"] = scene_tolerances
@@ -208,6 +208,9 @@ def validate_suite(report, output, tolerances, reference=None):
         if not result["passed"]:
             diagnostic.mkdir(parents=True, exist_ok=True)
             (diagnostic / "failure.json").write_text(json.dumps(result, indent=2))
+        result.pop("failed_frames", None)
+        result.pop("name", None)
+        result.pop("phase", None)
         run["visual"] = result
         results.append(result)
     if not reference:
@@ -235,7 +238,6 @@ def validate_suite(report, output, tolerances, reference=None):
                 }
                 for run in pair:
                     run["visual"]["tolerances"] = calibrated
-                    run["visual"]["repeatability"] = metrics
                     if not stable:
                         run["visual"]["passed"] = False
                         run["visual"]["errors"].append("Baseline first/cached outputs are not sufficiently repeatable")
@@ -249,9 +251,8 @@ def validate_suite(report, output, tolerances, reference=None):
     complete = len(results) == len(report["scenes"]) * 2 and not report.get("interrupted")
     validation = {"passed": complete and all(r["passed"] for r in results),
                   "mode": "comparison" if reference else "reference",
-                  "tolerances": tolerances, "runs": results}
+                  "tolerances": tolerances}
     if reference:
         validation["baseline"] = str(root.resolve())
-    (output / "validation.json").write_text(json.dumps(validation, indent=2))
     report["visual_validation" if reference else "visual_reference"] = validation
     return validation["passed"]
