@@ -77,6 +77,22 @@ class ReportingTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, field):
                 comparison_rows(baseline, candidate)
 
+    def test_old_lossless_timings_cannot_compare_with_default_exports(self):
+        old, new = self.report(), self.report()
+        new["timing_protocol"] = "default-export-separate-lossless-v1"
+        with self.assertRaisesRegex(ValueError, "timing_protocol"):
+            comparison_rows(old, new)
+
+    def test_new_timings_require_explicit_validation_success(self):
+        old, new = self.report(), self.report(8)
+        for report in (old, new):
+            report["timing_protocol"] = "default-export-separate-lossless-v1"
+        self.assertIsNone(comparison_rows(old, new)[0]["render_change_percent"])
+        for report in (old, new):
+            for row in report["summary"]:
+                row["visual_passed"] = True
+        self.assertAlmostEqual(comparison_rows(old, new)[0]["render_change_percent"], -20)
+
     def test_failed_or_partial_repetitions_have_no_percentage(self):
         baseline, candidate = self.report(), self.report(2)
         candidate["summary"][0]["status"] = "failed"

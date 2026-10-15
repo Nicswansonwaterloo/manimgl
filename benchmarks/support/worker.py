@@ -31,6 +31,9 @@ def main():
         metrics["resolution"] = list(self.camera.get_pixel_shape())
         metrics["fps"] = self.camera.fps
         metrics["msaa_samples"] = self.samples
+        writer = self.file_writer
+        metrics["encoding"] = {"codec": writer.video_codec, "pixel_format": writer.pixel_format,
+                               "crf": writer.crf}
 
     def measured_run(self):
         start = time.perf_counter()

@@ -32,31 +32,42 @@ class RunnerTests(unittest.TestCase):
                     self.assertTrue((output / f"logs/{name}.log").exists())
                     self.assertTrue((output / f"videos/{name}.mp4").exists())
 
-    def test_main_runs_each_scene_twice_consecutively(self):
+    def test_all_default_exports_precede_separate_lossless_renders(self):
         with tempfile.TemporaryDirectory() as temporary:
             args = argparse.Namespace(compare=None, scene_file=Path("unused.py"), only=None,
                                       list=False, output=Path(temporary) / "results",
                                       resolution="640x360", fps=15, compile_video=False)
             scenes = [{"name": "A"}, {"name": "B"}]
+            report = {"runs": [], "interrupted": False}
             calls = []
-            def fake_run(scene, iteration, *args):
-                calls.append((scene["name"], iteration))
-                return {"name": scene["name"], "status": "ok"}
+            def fake_run(scene, iteration, args, output, scratch, clip, *, lossless=False):
+                calls.append((scene["name"], iteration, lossless, scratch))
+                clip.write_bytes(b"video")
+                return {"name": scene["name"], "iteration": iteration,
+                        "phase": "first" if iteration == 1 else "cached", "status": "ok",
+                        "frames": 3, "animation_seconds": 0.2,
+                        "render_seconds": 99 if lossless else 1, "wall_seconds": 100 if lossless else 2}
             with patch.object(run, "parse_args", return_value=args), \
                  patch.object(run, "discover", return_value=scenes), \
-                 patch.object(run, "make_report", return_value={"runs": [], "interrupted": False}), \
+                 patch.object(run, "make_report", return_value=report), \
                  patch.object(run, "run_one", side_effect=fake_run), \
                  patch.object(run, "save_report"), patch.object(run, "print_results"), \
                  patch("benchmarks.support.visual.load_reference", return_value=(Path(temporary), {})), \
                  patch("benchmarks.support.visual.validate_suite", return_value=True), \
+                 patch("benchmarks.support.visual.inspect_video", return_value={"errors": []}), \
                  patch.object(run, "CONSOLE"):
                 self.assertEqual(run.main(), 0)
-            self.assertEqual(calls, [("A", 1), ("A", 2), ("B", 1), ("B", 2)])
+            expected = [("A", 1), ("A", 2), ("B", 1), ("B", 2)]
+            self.assertEqual([c[:3] for c in calls],
+                             [(n, i, False) for n, i in expected] + [(n, i, True) for n, i in expected])
+            self.assertNotEqual(calls[0][3], calls[4][3])
+            self.assertEqual([r["render_seconds"] for r in report["runs"]], [1] * 4)
+            self.assertEqual([r["validation_render"]["render_seconds"] for r in report["runs"]], [99] * 4)
 
-    def test_forty_eight_distinct_workloads(self):
+    def test_forty_nine_distinct_workloads(self):
         scenes = run.discover()
-        self.assertEqual(len(scenes), 48)
-        self.assertEqual(len({s["name"] for s in scenes}), 48)
+        self.assertEqual(len(scenes), 49)
+        self.assertEqual(len({s["name"] for s in scenes}), 49)
         self.assertTrue({"WaveLattice500", "DepthCity500", "OrbitalSwarm600", "MovingLight3D"}
                         <= {s["name"] for s in scenes})
         self.assertTrue({"BreadthFirstSearchGraph", "HilbertSpaceFilling3D", "ClothWindSimulation3D",
@@ -97,13 +108,19 @@ class RunnerTests(unittest.TestCase):
         with patch.object(telemetry.subprocess, "run", return_value=argparse.Namespace(stdout=plistlib.dumps(entries))):
             self.assertEqual(telemetry.apple_gpu_samples(), [{"id": "ioreg:7", "name": "AGXAccelerator", "utilization": 42.0}])
 
-    def exercise_subprocess(self, mode):
+    def exercise_subprocess(self, mode, lossless=False):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             harness = root / "harness"
             harness.mkdir()
-            (harness / "worker.py").write_text('''import json, os, pathlib, sys, time
+            (harness / "worker.py").write_text('''import json, os, pathlib, sys, time, yaml
 args = sys.argv
+config = yaml.safe_load(pathlib.Path(args[args.index("--config_file") + 1]).read_text())
+expected_lossless = ''' + repr(lossless) + '''
+if expected_lossless:
+    assert config["file_writer"] == {"video_codec": "libx264rgb", "pixel_format": "rgb24", "crf": 0}
+else:
+    assert "file_writer" not in config
 movies = pathlib.Path(args[args.index("--video_dir") + 1])
 (movies / "Case.mp4").write_bytes(b"movie bytes")
 mode = ''' + repr(mode) + '''
@@ -125,7 +142,8 @@ pathlib.Path(os.environ["MANIM_BENCHMARK_METRICS"]).write_text(json.dumps(metric
                                       timeout=0.2 if mode == "timeout" else 10)
             clip = scratch / "retained.mp4"
             with patch.object(run, "WORKER", harness / "worker.py"):
-                result = run.run_one({"name": "Case", "file": "case.py"}, 1, args, output, scratch, clip)
+                result = run.run_one({"name": "Case", "file": "case.py"}, 1, args, output, scratch, clip,
+                                     lossless=lossless)
             self.assertEqual(list(scratch.iterdir()), [clip])
             self.assertTrue((output / result["log"]).exists())
             self.assertTrue(result["movies_deleted"])
@@ -133,6 +151,11 @@ pathlib.Path(os.environ["MANIM_BENCHMARK_METRICS"]).write_text(json.dumps(metric
 
     def test_success_deletes_original_movie_and_retains_only_join_input(self):
         self.assertEqual(self.exercise_subprocess("success")["status"], "ok")
+
+    def test_validation_worker_gets_lossless_override(self):
+        result = self.exercise_subprocess("success", lossless=True)
+        self.assertEqual(result["status"], "ok")
+        self.assertIn("-validation.log", result["log"])
 
     def test_failure_deletes_partial_movie(self):
         self.assertEqual(self.exercise_subprocess("failure")["status"], "failed")

@@ -30,6 +30,22 @@ def write_video(path, values, fps=15):
 
 
 class VisualTests(unittest.TestCase):
+    def test_separate_export_or_lossless_failure_rejects_measurement(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            write_video(root / "lossless.mp4", [0, 0, 0])
+            for export_ok, lossless_status in [(False, "ok"), (True, "failed")]:
+                with self.subTest(export_ok=export_ok, lossless_status=lossless_status):
+                    report = {"timing_protocol": "default-export-separate-lossless-v1",
+                              "resolution": "32x32", "fps": 15, "scenes": [{"name": "Case"}],
+                              "runs": [{"name": "Case", "phase": phase, "status": "ok",
+                                        "frames": 3, "animation_seconds": 0.2, "video": "lossless.mp4",
+                                        "export_validation": {"passed": export_ok, "errors": []},
+                                        "validation_render": {"status": lossless_status}}
+                                       for phase in ("first", "cached")]}
+                    self.assertFalse(validate_suite(report, root, DEFAULT_TOLERANCES))
+                    self.assertTrue(all(not r["visual"]["passed"] for r in report["runs"]))
+
     @unittest.skipUnless(shutil.which("ffmpeg"), "FFmpeg unavailable")
     def test_review_copy_is_compatible_and_preserves_lossless_reference(self):
         with tempfile.TemporaryDirectory() as temporary:

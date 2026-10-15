@@ -90,8 +90,8 @@ def stop_process(process):
     process.wait()
 
 
-def run_one(scene, iteration, args, output, scratch, retained_clip=None):
-    label = f"{scene['name']}-{iteration:02d}"
+def run_one(scene, iteration, args, output, scratch, retained_clip=None, *, lossless=False):
+    label = f"{scene['name']}-{iteration:02d}" + ("-validation" if lossless else "")
     log_path = output / "logs" / f"{label}.log"
     scene_cache = scratch / "scene-caches" / scene["name"]
     readings = {"rss": [], "gpu": {}}
@@ -102,8 +102,9 @@ def run_one(scene, iteration, args, output, scratch, retained_clip=None):
         metrics_path = temporary / "metrics.json"
         config = {"directories": {"cache": str(scene_cache / "cache"),
                                   "subdirs": {"latex_cache": str(scene_cache / "latex")}},
-                  "text": {"font": "sans-serif"},
-                  "file_writer": {"video_codec": "libx264rgb", "pixel_format": "rgb24", "crf": 0}}
+                  "text": {"font": "sans-serif"}}
+        if lossless:
+            config["file_writer"] = {"video_codec": "libx264rgb", "pixel_format": "rgb24", "crf": 0}
         config_path = temporary / "config.yml"
         config_path.write_text(yaml.safe_dump(config))
         command = [sys.executable, str(WORKER), str(HERE / scene["file"]), scene["name"],
@@ -158,12 +159,49 @@ def run_one(scene, iteration, args, output, scratch, retained_clip=None):
             "worker_peak_mib": worker.get("worker_peak_rss_bytes", 0) / 2**20 if worker.get("worker_peak_rss_bytes") else None,
             "gpu": gpu or None, "notes": sorted(notes), "video_bytes": size, "movies_deleted": True,
             "adapter": worker.get("adapter"),
+            "encoding": worker.get("encoding"),
             # A single device can be displayed unambiguously. Multi-GPU readings
             # remain per-device in JSON instead of conflating unrelated adapters.
             "device_gpu_utilization_percent": utilization[0] if len(gpu) == 1 and utilization else None,
             "import_seconds": worker.get("import_seconds"), "scene_init_seconds": worker.get("scene_init_seconds"),
             "animation_seconds": worker.get("animation_seconds"), "msaa_samples": worker.get("msaa_samples"),
             "log": str(log_path.relative_to(output))}
+
+
+def render_validation(report, scenes, args, output, scratch):
+    """Run only after all measurements, with separate first/repeat disk caches."""
+    import av
+    from benchmarks.support.visual import DEFAULT_TOLERANCES, inspect_video
+
+    validation_scratch = scratch / "validation"
+    validation_scratch.mkdir()
+    if not args.scene_file:
+        prepare_assets(validation_scratch / "assets")
+    by_name = {scene["name"]: scene for scene in scenes}
+    for measured in report["runs"]:
+        errors = []
+        try:
+            if measured["status"] != "ok" or not measured.get("export_video"):
+                raise ValueError("Timed export did not complete")
+            info = inspect_video(output / measured["export_video"], measured, report,
+                                 DEFAULT_TOLERANCES["duration_tolerance"])
+            errors.extend(info["errors"])
+        except (av.error.FFmpegError, OSError, ValueError) as error:
+            errors.append(str(error))
+        measured["export_validation"] = {"passed": not errors, "errors": errors}
+        clip = output / "reference-videos" / f"{measured['name']}-{measured['iteration']:02d}.mp4"
+        with CONSOLE.status(f"Lossless validation render: {measured['name']} · {measured['phase']}"):
+            validation = run_one(by_name[measured["name"]], measured["iteration"], args,
+                                 output, validation_scratch, clip, lossless=True)
+        measured["validation_render"] = validation
+        if clip.exists():
+            measured["video"] = str(clip.relative_to(output))
+            measured["movies_deleted"] = False
+        for key in ("frames", "animation_seconds", "msaa_samples", "adapter"):
+            if measured.get(key) != validation.get(key):
+                errors.append(f"Timed and validation renders differ: {key}")
+        measured["export_validation"]["passed"] = not errors
+        save_report(report, output)
 
 
 def compile_video(clips, destination, scratch, timeout):
@@ -219,12 +257,14 @@ def main():
     output.mkdir(parents=True, exist_ok=False)
     (output / "logs").mkdir()
     (output / "reference-videos").mkdir()
+    (output / "exports").mkdir()
     CONSOLE.rule("[bold cyan]ManimGL Render Benchmark")
     CONSOLE.print(f"[bold]{args.resolution} · {args.fps} fps · {len(scenes)} scenes · first run + cached repeat[/bold]\n"
                   "One renderer at a time · movie encoding included · temporary data deleted")
-    CONSOLE.print("Visual checks run after timed renders · successful candidate videos/logs are deleted")
+    CONSOLE.print("Timed exports use default encoding · separate lossless renders validate every frame afterward")
     clips = {}
     failed = False
+    validation_started = None
     with tempfile.TemporaryDirectory(prefix="manim-benchmark-") as temporary:
         scratch = Path(temporary)
         try:
@@ -232,13 +272,13 @@ def main():
                 prepare_assets(scratch / "assets")
             for number, scene in enumerate(scenes, 1):
                 for iteration in (1, 2):
-                    clip = output / "reference-videos" / f"{scene['name']}-{iteration:02d}.mp4"
+                    clip = output / "exports" / f"{scene['name']}-{iteration:02d}.mp4"
                     phase_label = "first run" if iteration == 1 else "cached repeat"
                     with CONSOLE.status(f"[{number}/{len(scenes)}] {scene['name']} · {phase_label}"):
                         result = run_one(scene, iteration, args, output, scratch, clip)
                     report["runs"].append(result)
                     if clip.exists():
-                        result["video"] = str(clip.relative_to(output))
+                        result["export_video"] = str(clip.relative_to(output))
                         result["movies_deleted"] = False
                     if len(report["runs"]) == 1 and result.get("adapter"):
                         adapter = result["adapter"]
@@ -259,12 +299,13 @@ def main():
                 else:
                     compile_video([clips[scene["name"]] for scene in scenes], output / "suite.mp4", scratch, args.timeout)
                     report["video"] = "suite.mp4"
+            validation_started = time.perf_counter()
+            render_validation(report, scenes, args, output, scratch)
         except KeyboardInterrupt:
             report["interrupted"] = True
         finally:
             save_report(report, output)
     if not report["interrupted"]:
-        validation_started = time.perf_counter()
         try:
             with CONSOLE.status("Checking decoded videos (outside render timings)"):
                 valid = validate_suite(report, output, tolerances, reference)
@@ -285,6 +326,8 @@ def main():
         finally:
             report["validation_seconds"] = time.perf_counter() - validation_started
             save_report(report, output)
+    elif validation_started is not None:
+        report["validation_seconds"] = time.perf_counter() - validation_started
     clean_successful_artifacts(report, output, visual_baseline)
     save_report(report, output)
     print_results(report)
@@ -301,10 +344,15 @@ def clean_successful_artifacts(report, output, baseline=False):
             continue
         if run.get("log"):
             (output / run.pop("log")).unlink(missing_ok=True)
+        validation = run.get("validation_render", {})
+        if validation.get("log"):
+            (output / validation.pop("log")).unlink(missing_ok=True)
+        if run.get("export_video"):
+            (output / run.pop("export_video")).unlink(missing_ok=True)
         if not baseline and run.get("video"):
             (output / run.pop("video")).unlink(missing_ok=True)
             run["movies_deleted"] = True
-    for name in ("logs", "videos", "reference-videos"):
+    for name in ("logs", "videos", "reference-videos", "exports"):
         folder = output / name
         if folder.is_dir() and not any(folder.iterdir()):
             folder.rmdir()
