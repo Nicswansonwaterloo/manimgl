@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import copy
 import inspect
 import sys
@@ -145,13 +146,25 @@ def get_indent(code_lines: list[str], line_number: int) -> str:
 
 def insert_embed_line_to_module(module: Module, run_config: Dict) -> None:
     """
-    This is hacky, but convenient. When user includes the argument "-e", it will try
-    to recreate a file that inserts the line `self.embed()` into the end of the scene's
-    construct method. If there is an argument passed in, it will insert the line after
-    the last line in the sourcefile which includes that string.
+    Insert self.embed() after the requested source line, or at the end of each
+    scene's construct method when -e is passed without a line number (zero).
     """
     lines = inspect.getsource(module).splitlines()
     line_number = run_config.embed_line
+
+    if line_number == 0:
+        tree = ast.parse("\n".join(lines))
+        scene_names = {scene.__name__ for scene in get_scene_classes(module)}
+        for node in tree.body:
+            if isinstance(node, ast.ClassDef) and node.name in scene_names:
+                for method in node.body:
+                    if isinstance(method, ast.FunctionDef) and method.name == "construct":
+                        breakpoint = ast.parse("self.embed()").body[0]
+                        ast.copy_location(breakpoint, method.body[-1])
+                        method.body.append(breakpoint)
+        ast.fix_missing_locations(tree)
+        exec(compile(tree, module.__file__, "exec"), module.__dict__)
+        return
 
     # Add the relevant embed line to the code
     indent = get_indent(lines, line_number)
@@ -180,7 +193,7 @@ def insert_embed_line_to_module(module: Module, run_config: Dict) -> None:
 
 def get_module(run_config: Dict) -> Module:
     module = ModuleLoader.get_module(run_config.file_name, run_config.is_reload)
-    if run_config.embed_line:
+    if module is not None and run_config.embed_line is not None:
         insert_embed_line_to_module(module, run_config)
     return module
 

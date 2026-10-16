@@ -179,9 +179,10 @@ class TransformMatchingStrings(TransformMatchingParts):
 
             i1 = sum(counts1[:match.a])
             i2 = sum(counts2[:match.b])
-            size = sum(counts1[match.a:match.a + match.size])
+            size1 = sum(counts1[match.a:match.a + match.size])
+            size2 = sum(counts2[match.b:match.b + match.size])
 
-            blocks.append((source[i1:i1 + size], target[i2:i2 + size]))
+            blocks.append((source[i1:i1 + size1], target[i2:i2 + size2]))
 
             for i in range(match.size):
                 syms1[match.a + i] = "Null1"

@@ -22,11 +22,11 @@ if TYPE_CHECKING:
 
 
 @lru_cache()
-def char_to_cahced_mob(char: str, **text_config):
-    if "\\" in char or char == "i":
+def char_to_cahced_mob(char: str, use_tex: bool = False, **text_config):
+    if use_tex or "\\" in char or char == "i":
         # This is for when the "character" is a LaTeX command
         # like ^\circ or \dots
-        return Tex(char, **text_config)
+        return Tex(char.replace("–", "-"), **text_config)
     else:
         return Text(char, **text_config)
 
@@ -51,6 +51,7 @@ class DecimalNumber(VMobject):
         edge_to_fix: Vect3 = LEFT,
         font_size: float = 48,
         text_config: dict = dict(),  # Do not pass in font_size here
+        use_tex: bool = False,
         **kwargs
     ):
         self.num_decimal_places = num_decimal_places
@@ -65,6 +66,7 @@ class DecimalNumber(VMobject):
         self.edge_to_fix = edge_to_fix
         self.font_size = font_size
         self.text_config = dict(text_config)
+        self.use_tex = use_tex
 
         super().__init__(
             color=color,
@@ -146,8 +148,8 @@ class DecimalNumber(VMobject):
         num_string = num_string.replace("-", "–")
         return num_string
 
-    def char_to_mob(self, char: str) -> Text:
-        return char_to_cahced_mob(char, **self.text_config)
+    def char_to_mob(self, char: str) -> Text | Tex:
+        return char_to_cahced_mob(char, use_tex=self.use_tex, **self.text_config)
 
     def interpolate(
         self,

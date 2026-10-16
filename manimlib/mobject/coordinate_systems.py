@@ -769,17 +769,19 @@ class ComplexPlane(NumberPlane):
         if numbers is None:
             numbers = self.get_default_coordinate_values(skip_first)
 
+        kwargs.setdefault("use_tex", True)
         self.coordinate_labels = VGroup()
         for number in numbers:
+            number_config = dict(kwargs)
             z = complex(number)
             if abs(z.imag) > abs(z.real):
                 axis = self.get_y_axis()
                 value = z.imag
-                kwargs["unit_tex"] = "i"
+                number_config["unit_tex"] = "i"
             else:
                 axis = self.get_x_axis()
                 value = z.real
-            number_mob = axis.get_number_mobject(value, font_size=font_size, **kwargs)
+            number_mob = axis.get_number_mobject(value, font_size=font_size, **number_config)
             self.coordinate_labels.add(number_mob)
         # Confirm they can be safely drawn together
         self.coordinate_labels.draw_fills_together_if_disjoint()

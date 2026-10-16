@@ -7,6 +7,22 @@ from manimlib.utils.tex import num_tex_symbols
 
 
 class TexOperatorTests(unittest.TestCase):
+    def test_roman_subscript_counts_and_matching(self):
+        for label, count in [('red', 3), ('diff', 3), ('ffi', 1), ('office', 4)]:
+            with self.subTest(label=label), patch('manimlib.mobject.svg.tex_mobject.log.warning') as warn:
+                prefix = rf'\tau_{{\mathrm{{{label}}}}}'
+                source = Tex(prefix)
+                target = Tex(prefix + '=x')
+                self.assertEqual(num_tex_symbols(prefix), count + 1)
+                self.assertEqual(len(source), count + 1)
+                self.assertEqual(sum(map(num_tex_symbols, source.get_symbol_substrings())), len(source))
+                self.assertEqual(list(target['x'][0]), list(target[-1:]))
+                blocks = TransformMatchingStrings.matching_blocks(None, source, target, [], {})
+                self.assertEqual(list(blocks[0][0]), list(source))
+                self.assertEqual(list(blocks[0][1]), list(target[:-2]))
+                TransformMatchingStrings(source, target)
+                warn.assert_not_called()
+
     def test_counts_match_rendered_paths(self):
         for name, count in [('disc', 4), ('diff', 3), ('ff', 1), ('fi', 1),
                             ('fl', 1), ('ffi', 1), ('ffl', 1), ('office', 4)]:

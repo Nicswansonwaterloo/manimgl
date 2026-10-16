@@ -14,7 +14,7 @@ from manimlib.utils.color import color_to_hex
 from manimlib.utils.color import hex_to_int
 from manimlib.utils.tex_file_writing import latex_to_svg
 from manimlib.utils.tex import num_tex_symbols
-from manimlib.utils.tex import split_tex_operators
+from manimlib.utils.tex import get_tex_symbol_substrings
 from manimlib.logger import log
 
 from typing import TYPE_CHECKING
@@ -219,24 +219,20 @@ class Tex(StringMobject):
     # Specific to Tex
     def substr_to_path_count(self, substr: str) -> int:
         tex = self.get_tex()
+        if substr == tex:
+            return len(self)
         if len(self) != num_tex_symbols(tex):
             log.warning(f"Estimated size of {tex} does not match true size")
         return num_tex_symbols(substr)
 
     def get_symbol_substrings(self):
-        pattern = "|".join((
-            # Tex commands
-            r"\\[a-zA-Z]+",
-            # And most single characters, with these exceptions
-            r"[^\^\{\}\s\_\$\\\&]",
-        ))
-        # An operator is one matching unit: splitting its roman letters can
-        # split a ligature and shift all subsequent glyph offsets.
-        return [
-            symbol
-            for is_operator, chunk in split_tex_operators(self.string)
-            for symbol in ([chunk] if is_operator else re.findall(pattern, chunk))
-        ]
+        symbols = get_tex_symbol_substrings(self.string)
+        if sum(map(num_tex_symbols, symbols)) != len(self):
+            # Custom macros, fonts, and extensible glyphs can defeat the
+            # estimator. Match the whole expression or fall back to shapes
+            # rather than slicing paths at known-wrong offsets.
+            return [self.string]
+        return symbols
 
     def make_number_changeable(
         self,

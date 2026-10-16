@@ -164,8 +164,11 @@ def parse_cli():
         parser.add_argument(
             "-e", "--embed",
             metavar="LINE_NUMBER",
-            help="Adds a breakpoint at the inputted file dropping into an " + \
-                 "interactive iPython session at that point of the code."
+            nargs="?",
+            const=0,
+            type=int,
+            help="Adds an interactive IPython breakpoint after LINE_NUMBER, " +
+                 "or at the end of construct when no line number is given."
         )
         parser.add_argument(
             "-r", "--resolution",
@@ -315,7 +318,7 @@ def update_scene_config(config: Dict, args: Namespace):
 def update_run_config(config: Dict, args: Namespace):
     config.run = Dict(
         file_name=args.file,
-        embed_line=(int(args.embed) if args.embed is not None else None),
+        embed_line=args.embed,
         is_reload=False,
         prerun=args.prerun,
         scene_names=args.scene_names,
