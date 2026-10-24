@@ -16,6 +16,7 @@ from manimlib.mobject.mobject import Mobject
 from manimlib.utils.file_ops import guarantee_existence
 from manimlib.camera.camera import FrameStream
 from manimlib.utils.sounds import get_full_sound_file_path
+from manimlib.utils.video import select_video_codec
 
 from typing import TYPE_CHECKING
 
@@ -44,7 +45,7 @@ class SceneFileWriter(object):
         progress_description_len: int = 40,
         # Name of the binary used for ffmpeg
         ffmpeg_bin: str = "ffmpeg",
-        video_codec: str = "libx264",
+        video_codec: str = "auto",
         pixel_format: str = "yuv420p",
         # How hard the encoder should try, where zero means keep every pixel exactly. Left
         # unsaid the encoder's default stands, which throws away a good deal, so it is worth
@@ -72,6 +73,9 @@ class SceneFileWriter(object):
         self.crf = crf
         self.saturation = saturation
         self.gamma = gamma
+
+        if self.write_to_movie:
+            self.resolve_video_codec()
 
         # State during file writing
         self.writing_process: sp.Popen | None = None
@@ -180,6 +184,16 @@ class SceneFileWriter(object):
         self.add_audio_segment(new_segment, time, gain_to_background)
 
     # Writers
+    def resolve_video_codec(self) -> None:
+        if self.video_codec != "auto":
+            return
+        width, height = self.scene.camera.get_pixel_shape()
+        self.video_codec = select_video_codec(
+            self.video_codec, self.ffmpeg_bin, width, height,
+            self.scene.camera.fps, self.pixel_format, self.crf,
+        )
+        log.info(f"Video encoder: {self.video_codec}")
+
     def begin(self) -> None:
         if not self.subdivide_output and self.write_to_movie:
             self.open_movie_pipe(self.get_movie_file_path())
@@ -205,6 +219,7 @@ class SceneFileWriter(object):
             self.open_file()
 
     def open_movie_pipe(self, file_path: str) -> None:
+        self.resolve_video_codec()
         stem, ext = os.path.splitext(file_path)
         self.final_file_path = file_path
         self.temp_file_path = stem + "_temp" + ext

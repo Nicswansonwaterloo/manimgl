@@ -1,5 +1,7 @@
 # Render benchmarks
 
+## These only apply to macOS and linux systems, NOT Windows!!! On windows, simply run `python ...` outside of wsl.
+
 Run `conda run --no-capture-output -n manimgl python benchmarks/run.py --baseline` from the repository root to create or replace `benchmarks/results/baseline`. The 49 scenes each render twice at 854×480 and 15 fps: first with a fresh disk cache, then with that cache reused in a new process. These timed exports use Manim’s default encoder. After all timings finish, each scene renders twice again with separate fresh/reused caches and lossless RGB encoding; those untimed outputs are checked against each other, frame by frame. A successful baseline keeps one lossless reference per scene and automatically compiles a player-compatible `suite.mp4` for review. Timings include default movie encoding and exclude lossless rendering, validation and preview compilation; OS/driver caches are not reset.
 
 Run `conda run --no-capture-output -n manimgl python benchmarks/run.py` after a change to validate both untimed lossless phases against the same saved reference and print timing changes automatically. Use `--only SceneName AnotherScene` to check selected scenes. Validation checks frame counts, dimensions, playback timing and bounded pixel differences, with tolerances calibrated from baseline repeatability. Failed checks exit nonzero and keep logs, movies and visual diffs; successful comparisons discard their movies. Changed scene sources or render configuration require a new baseline.

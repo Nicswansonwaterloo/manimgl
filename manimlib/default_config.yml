@@ -65,7 +65,9 @@ file_writer:
   # What command to use for ffmpeg
   ffmpeg_bin: "ffmpeg"
   # Parameters to pass into ffmpeg
-  video_codec: "libx264"
+  # auto tests NVIDIA H.264 encoding, falling back to libx264 if unavailable.
+  # Set an explicit codec (or use --vcodec) to bypass automatic selection.
+  video_codec: "auto"
   pixel_format: "yuv420p"
   saturation: 1.0
   gamma: 1.0
