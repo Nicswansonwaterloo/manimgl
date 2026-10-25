@@ -67,8 +67,8 @@ def stop_process(process):
     process.wait()
 
 
-def run_one(scene, iteration, args, output, scratch, retained_clip, *, lossless=False):
-    label = f"{scene['name']}-{iteration:02d}" + ("-lossless" if lossless else "")
+def run_one(scene, iteration, args, output, scratch, retained_clip):
+    label = f"{scene['name']}-{iteration:02d}"
     log_path = output / "logs" / f"{label}.log"
     scene_cache = scratch / "scene-caches" / scene["name"]
     readings = {"rss": [], "gpu": {}}
@@ -80,15 +80,15 @@ def run_one(scene, iteration, args, output, scratch, retained_clip, *, lossless=
         config = {"directories": {"cache": str(scene_cache / "cache"),
                                   "subdirs": {"latex_cache": str(scene_cache / "latex")}},
                   "text": {"font": "sans-serif"}}
-        if lossless:
-            config["file_writer"] = {"video_codec": "libx264rgb", "pixel_format": "rgb24", "crf": 0}
         config_path = temporary / "config.yml"
         config_path.write_text(yaml.safe_dump(config))
         command = [sys.executable, str(WORKER), str(HERE / scene["file"]), scene["name"],
                    "-w", "-q", "--resolution", args.resolution, "--fps", str(args.fps),
                    "--video_dir", str(temporary), "--file_name", scene["name"],
                    "--config_file", str(config_path), "--log-level", "WARNING"]
-        env = {**os.environ, "MANIM_BENCHMARK_METRICS": str(metrics_path),
+        capture = scratch / "captures" / f"{label}.rgba"
+        capture.parent.mkdir(exist_ok=True)
+        env = {**os.environ, "MANIM_BENCHMARK_CAPTURE": str(capture.resolve()), "MANIM_BENCHMARK_METRICS": str(metrics_path),
                "MPLCONFIGDIR": str(scene_cache / "matplotlib"),
                "MANIM_BENCHMARK_ASSETS": str(scratch / "assets"),
                "PYTHONDONTWRITEBYTECODE": "1",
@@ -125,6 +125,9 @@ def run_one(scene, iteration, args, output, scratch, retained_clip, *, lossless=
     return {"name": scene["name"], "iteration": iteration, "phase": "first" if iteration == 1 else "cached",
             "status": "ok" if success else "timeout" if timed_out else "failed",
             "wall_seconds": wall, "render_seconds": render_time,
+            "capture": str(capture.resolve()),
+            "capture_frames": worker.get("capture_frames"),
+            "capture_write_seconds": worker.get("capture_write_seconds"),
             "frames": worker.get("frames_written"),
             "render_fps": worker.get("frames_written", 0) / render_time if render_time else None,
             "cpu_percent": 100 * cpu_time / wall if cpu_time is not None else None,
@@ -135,15 +138,12 @@ def run_one(scene, iteration, args, output, scratch, retained_clip, *, lossless=
             "log": str(log_path.relative_to(output))}
 
 
-def render_validation(report, scenes, args, output, scratch):
-    """Run only after all measurements, with separate first/repeat disk caches."""
+def prepare_validation(report, args, output):
+    """Compress captured encoder input only after every timed run has finished."""
     import av
+    from benchmarks.support.capture import encode_capture
     from benchmarks.support.visual import DEFAULT_TOLERANCES, inspect_video
 
-    validation_scratch = scratch / "validation"
-    validation_scratch.mkdir()
-    prepare_assets(validation_scratch / "assets")
-    by_name = {scene["name"]: scene for scene in scenes}
     for measured in report["runs"]:
         errors = []
         try:
@@ -152,20 +152,24 @@ def render_validation(report, scenes, args, output, scratch):
             info = inspect_video(output / measured["export_video"], measured, report,
                                  DEFAULT_TOLERANCES["duration_tolerance"])
             errors.extend(info["errors"])
-        except (av.error.FFmpegError, OSError, ValueError) as error:
-            errors.append(str(error))
-        measured["export_validation"] = {"passed": not errors, "errors": errors}
-        clip = output / "reference-videos" / f"{measured['name']}-{measured['iteration']:02d}.mp4"
-        with CONSOLE.status(f"Lossless validation render: {measured['name']} · {measured['phase']}"):
-            validation = run_one(by_name[measured["name"]], measured["iteration"], args,
-                                 output, validation_scratch, clip, lossless=True)
-        measured["validation_render"] = validation
-        if clip.exists():
+            if measured.get("capture_frames") != measured.get("frames"):
+                raise ValueError("Captured frame count differs from timed writer count")
+            capture = output / measured["capture"]
+            clip = output / "reference-videos" / capture.with_suffix(".mp4").name
+            with CONSOLE.status(f"Compressing captured frames: {measured['name']} · {measured['phase']}"):
+                encode_capture(capture, clip, args.resolution, args.fps, measured["frames"])
             measured["video"] = str(clip.relative_to(output))
-        for key in ("frames", "animation_seconds", "msaa_samples", "adapter"):
-            if measured.get(key) != validation.get(key):
-                errors.append(f"Timed and validation renders differ: {key}")
-        measured["export_validation"]["passed"] = not errors
+            capture.unlink()
+            measured.pop("capture")
+        except (av.error.FFmpegError, OSError, ValueError, KeyError) as error:
+            errors.append(str(error))
+        if errors and measured.get("capture"):
+            source = Path(measured["capture"])
+            if source.exists():
+                retained = output / "reference-videos" / source.name
+                shutil.move(str(source), retained)
+                measured["capture"] = str(retained.relative_to(output))
+        measured["export_validation"] = {"passed": not errors, "errors": errors}
         save_report(report, output)
 
 
@@ -208,7 +212,7 @@ def main():
         (output / folder).mkdir(parents=True)
     CONSOLE.rule("[bold cyan]ManimGL Render Benchmark")
     CONSOLE.print(f"{args.resolution} · {args.fps} fps · {len(scenes)} scenes · first + cached")
-    CONSOLE.print("Default encoder timings · separate untimed lossless renders validate every frame")
+    CONSOLE.print("Default encoder + raw capture timings · every captured frame validated after timing")
     valid = False
     with tempfile.TemporaryDirectory(prefix="manim-benchmark-") as temporary:
         scratch = Path(temporary)
@@ -227,7 +231,7 @@ def main():
                     save_report(report, output)
             started = time.perf_counter()
             try:
-                render_validation(report, scenes, args, output, scratch)
+                prepare_validation(report, args, output)
                 with CONSOLE.status("Validating every frame"):
                     valid = validate_suite(report, output, DEFAULT_TOLERANCES, reference)
             finally:
@@ -266,9 +270,6 @@ def clean_successful_artifacts(report, output, baseline=False):
             continue
         if run.get("log"):
             (output / run.pop("log")).unlink(missing_ok=True)
-        validation = run.get("validation_render", {})
-        if validation.get("log"):
-            (output / validation.pop("log")).unlink(missing_ok=True)
         if run.get("export_video"):
             (output / run.pop("export_video")).unlink(missing_ok=True)
         if baseline and run.get("phase") == "cached":

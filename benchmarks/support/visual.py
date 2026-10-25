@@ -71,7 +71,7 @@ def load_reference(path, candidate):
     if not source.is_file():
         raise ValueError("Create the visual reference first: python benchmarks/run.py --baseline")
     baseline = json.loads(source.read_text())
-    for key in ("schema_version", "resolution", "fps", "phases", "config_sha256"):
+    for key in ("schema_version", "timing_protocol", "resolution", "fps", "phases", "config_sha256"):
         if baseline.get(key) != candidate.get(key):
             raise ValueError(f"Visual baseline {key} differs; use identical workloads and render settings")
     if baseline.get("validation_encoding", baseline.get("encoding")) != candidate.get("validation_encoding", candidate.get("encoding")):
@@ -172,11 +172,9 @@ def validate_suite(report, output, tolerances, reference=None):
         result = {"name": run["name"], "phase": run["phase"], "passed": False, "errors": []}
         diagnostic = output / "visual-diffs" / run["name"] / run["phase"]
         try:
-            if report.get("timing_protocol") == "default-export-separate-lossless-v1":
+            if report.get("timing_protocol") == "default-export-captured-frames-v1":
                 if not run.get("export_validation", {}).get("passed"):
                     raise ValueError("Timed export checks failed: " + "; ".join(run.get("export_validation", {}).get("errors", [])))
-                if run.get("validation_render", {}).get("status") != "ok":
-                    raise ValueError("Lossless validation render failed or is missing")
             if run["status"] != "ok" or not run.get("video"):
                 raise ValueError("Render did not complete; no valid video available")
             movie = video_path(output, run)

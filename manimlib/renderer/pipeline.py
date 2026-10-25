@@ -81,7 +81,9 @@ class PipelineState:
         return {
             "format": DEPTH_STENCIL_FORMAT,
             "depth_write_enabled": self.depth_write,
-            "depth_compare": "less" if self.depth_test else "always",
+            # Coincident geometry follows drawing order, including during crossfades.
+            # A strict comparison would let even a zero-alpha draw hide its copy.
+            "depth_compare": "less-equal" if self.depth_test else "always",
             "stencil_front": face(front),
             "stencil_back": face(back),
             "stencil_read_mask": 0xFF,

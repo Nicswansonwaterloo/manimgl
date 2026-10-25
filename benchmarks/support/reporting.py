@@ -50,7 +50,7 @@ def make_report(args, scenes, root, timestamp):
     return {
         "schema_version": 7, "created_at_utc": timestamp,
         "resolution": args.resolution, "fps": args.fps, "phases": ["first", "cached"],
-        "timing_protocol": "default-export-separate-lossless-v1",
+        "timing_protocol": "default-export-captured-frames-v1",
         "encoding": {"codec": writer["video_codec"], "pixel_format": writer["pixel_format"], "crf": writer["crf"]},
         "validation_encoding": {"codec": "libx264rgb", "pixel_format": "rgb24", "crf": 0},
         "scenes": scenes, "workload_sha256": digest.hexdigest(),
@@ -93,7 +93,7 @@ def comparison_rows(baseline, candidate):
         complete = (previous["status"] == current["status"] == "ok"
                     and previous.get("visual_passed") is not False
                     and current.get("visual_passed") is not False)
-        if candidate.get("timing_protocol") == "default-export-separate-lossless-v1":
+        if candidate.get("timing_protocol") == "default-export-captured-frames-v1":
             complete = complete and previous.get("visual_passed") is True and current.get("visual_passed") is True
         def change(field):
             before, after = previous[field], current[field]
@@ -148,12 +148,10 @@ def save_report(report, output):
     saved["scenes"] = [{"name": s["name"]} for s in report["scenes"]]
     fields = {"name", "phase", "status", "wall_seconds", "render_seconds", "frames",
               "render_fps", "cpu_percent", "tree_peak_mib", "device_gpu_utilization_percent",
-              "video", "export_video", "log", "visual"}
+              "video", "export_video", "log", "visual", "capture", "capture_frames",
+              "capture_write_seconds", "export_validation"}
     saved["adapter"] = next((r["adapter"] for r in report["runs"] if r.get("adapter")), None)
     saved["runs"] = [{k: v for k, v in run.items() if k in fields} for run in report["runs"]]
-    for saved_run, run in zip(saved["runs"], report["runs"]):
-        if run.get("validation_render", {}).get("log"):
-            saved_run["validation_log"] = run["validation_render"]["log"]
     # Keep records readable without expanding every measurement onto a separate line.
     lines = [json.dumps(k) + ": " + json.dumps(v) for k, v in saved.items() if k != "runs"]
     lines.append('"runs": [\n' + ',\n'.join(json.dumps(r) for r in saved["runs"]) + '\n]')

@@ -70,10 +70,15 @@ class RunnerTests(unittest.TestCase):
             (output / "stale.txt").write_text("disposable")
             args = argparse.Namespace(baseline=True, only=None, resolution="854x480", fps=15, timeout=300)
             report = {"runs": [], "interrupted": False}
-            def render(scene, iteration, args, output, scratch, clip, *, lossless=False):
+            def render(scene, iteration, args, output, scratch, clip):
                 clip.write_bytes(b"movie")
                 return dict(name=scene["name"], iteration=iteration, phase="first" if iteration == 1 else "cached",
-                            status="ok", wall_seconds=100 if lossless else 1)
+                            status="ok", wall_seconds=1)
+            def prepare(report, args, output):
+                for row in report["runs"]:
+                    clip = output / "reference-videos" / f"{row['phase']}.mp4"
+                    clip.write_bytes(b"capture")
+                    row["video"] = str(clip.relative_to(output))
             def validate(report, *args):
                 for row in report["runs"]:
                     row["visual"] = {"passed": True, "sha256": "same"}
@@ -85,15 +90,11 @@ class RunnerTests(unittest.TestCase):
                  patch.object(run, "print_results"), patch.object(run, "CONSOLE"), \
                  patch.object(run, "run_one", side_effect=render) as render_mock, \
                  patch.object(run, "compile_video") as compile_mock, \
-                 patch("benchmarks.support.visual.inspect_video", return_value={"errors": []}), \
+                 patch.object(run, "prepare_validation", side_effect=prepare), \
                  patch("benchmarks.support.visual.validate_suite", side_effect=validate):
                 self.assertEqual(run.main(), 0)
-            self.assertEqual(render_mock.call_count, 4)
-            self.assertEqual([c.kwargs.get("lossless", False) for c in render_mock.call_args_list],
-                             [False, False, True, True])
-            self.assertNotEqual(render_mock.call_args_list[0].args[4], render_mock.call_args_list[2].args[4])
+            self.assertEqual(render_mock.call_count, 2)
             self.assertEqual([r["wall_seconds"] for r in report["runs"]], [1, 1])
-            self.assertEqual([r["validation_render"]["wall_seconds"] for r in report["runs"]], [100, 100])
             compile_mock.assert_called_once()
             self.assertEqual(compile_mock.call_args.args[1], output / "suite.mp4")
             self.assertFalse((output / "stale.txt").exists())
@@ -143,7 +144,7 @@ class RunnerTests(unittest.TestCase):
         with patch.object(telemetry.subprocess, "run", return_value=argparse.Namespace(stdout=plistlib.dumps(entries))):
             self.assertEqual(telemetry.apple_gpu_samples(), [{"id": "ioreg:7", "name": "AGXAccelerator", "utilization": 42.0}])
 
-    def exercise_subprocess(self, mode, lossless=False):
+    def exercise_subprocess(self, mode):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             harness = root / "harness"
@@ -151,11 +152,8 @@ class RunnerTests(unittest.TestCase):
             (harness / "worker.py").write_text('''import json, os, pathlib, sys, time, yaml
 args = sys.argv
 config = yaml.safe_load(pathlib.Path(args[args.index("--config_file") + 1]).read_text())
-expected_lossless = ''' + repr(lossless) + '''
-if expected_lossless:
-    assert config["file_writer"] == {"video_codec": "libx264rgb", "pixel_format": "rgb24", "crf": 0}
-else:
-    assert "file_writer" not in config
+assert "file_writer" not in config
+assert os.environ["MANIM_BENCHMARK_CAPTURE"].endswith(".rgba")
 movies = pathlib.Path(args[args.index("--video_dir") + 1])
 (movies / "Case.mp4").write_bytes(b"movie bytes")
 mode = ''' + repr(mode) + '''
@@ -177,16 +175,14 @@ pathlib.Path(os.environ["MANIM_BENCHMARK_METRICS"]).write_text(json.dumps(metric
                                       timeout=0.2 if mode == "timeout" else 10)
             clip = scratch / "retained.mp4"
             with patch.object(run, "WORKER", harness / "worker.py"):
-                result = run.run_one({"name": "Case", "file": "case.py"}, 1, args, output, scratch, clip, lossless=lossless)
-            self.assertEqual(list(scratch.iterdir()), [clip])
+                result = run.run_one({"name": "Case", "file": "case.py"}, 1, args, output, scratch, clip)
+            self.assertEqual(set(scratch.iterdir()), {clip, scratch / "captures"})
+            self.assertEqual(Path(result["capture"]).parent, (scratch / "captures").resolve())
             self.assertTrue((output / result["log"]).exists())
             return result
 
     def test_success_deletes_original_movie_and_retains_only_join_input(self):
         self.assertEqual(self.exercise_subprocess("success")["status"], "ok")
-
-    def test_lossless_render_uses_separate_encoder(self):
-        self.assertEqual(self.exercise_subprocess("success", lossless=True)["status"], "ok")
 
     def test_failure_deletes_partial_movie(self):
         self.assertEqual(self.exercise_subprocess("failure")["status"], "failed")

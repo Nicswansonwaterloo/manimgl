@@ -30,11 +30,13 @@ class ReportingTests(unittest.TestCase):
             root = Path(temporary)
             report = {"scenes": [{"name": "Case", "file": "unused", "description": "unused"}],
                       "runs": [{"name": "Case", "phase": "first", "status": "ok",
-                                "wall_seconds": 1.25, "visual": {"passed": True}}]}
+                                "wall_seconds": 1.25, "capture_frames": 60, "capture_write_seconds": 0.1, "visual": {"passed": True}}]}
             reporting.save_report(report, root)
             self.assertEqual([p.name for p in root.iterdir()], ["results.json"])
             saved = json.loads((root / "results.json").read_text())
             self.assertNotIn("summary", saved)
+            self.assertEqual(saved["runs"][0]["capture_frames"], 60)
+            self.assertEqual(saved["runs"][0]["capture_write_seconds"], 0.1)
             self.assertEqual(saved["scenes"], [{"name": "Case"}])
             self.assertEqual(reporting.summarize(saved["runs"]), report["summary"])
 
@@ -93,14 +95,14 @@ class ReportingTests(unittest.TestCase):
 
     def test_old_lossless_timings_cannot_compare_with_default_exports(self):
         old, new = self.report(), self.report()
-        new["timing_protocol"] = "default-export-separate-lossless-v1"
+        new["timing_protocol"] = "default-export-captured-frames-v1"
         with self.assertRaisesRegex(ValueError, "timing_protocol"):
             comparison_rows(old, new)
 
     def test_new_timings_require_explicit_validation_success(self):
         old, new = self.report(), self.report(8)
         for report in (old, new):
-            report["timing_protocol"] = "default-export-separate-lossless-v1"
+            report["timing_protocol"] = "default-export-captured-frames-v1"
         self.assertIsNone(comparison_rows(old, new)[0]["render_change_percent"])
         for report in (old, new):
             for row in report["summary"]:

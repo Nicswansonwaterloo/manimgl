@@ -20,6 +20,18 @@ def main():
     metrics = {"import_seconds": time.perf_counter() - started, "frames_written": 0}
     original_init = Scene.__init__
     original_run = Scene.run
+    from benchmarks.support.capture import CaptureSink
+    original_open = SceneFileWriter.open_movie_pipe
+    capture_sinks = []
+
+    def captured_open(self, *args, **kwargs):
+        original_open(self, *args, **kwargs)
+        sink = CaptureSink(self.frames.sink, Path(os.environ["MANIM_BENCHMARK_CAPTURE"]),
+                           append=bool(capture_sinks))
+        capture_sinks.append(sink)
+        self.frames.sink = sink
+
+    SceneFileWriter.open_movie_pipe = captured_open
     original_write = SceneFileWriter.write_frame
 
     def measured_init(self, *args, **kwargs):
@@ -58,6 +70,10 @@ def main():
         render()
         metrics["completed"] = True
     finally:
+        for sink in capture_sinks:
+            sink.close()
+        metrics["capture_frames"] = sum(sink.frames for sink in capture_sinks)
+        metrics["capture_write_seconds"] = sum(sink.write_seconds for sink in capture_sinks)
         # getrusage retains CPU time for exited/waited-for children (the encoder).
         # This is more accurate than sampling CPU time of short-lived subprocesses.
         try:
