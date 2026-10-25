@@ -100,14 +100,14 @@ def full_tex_to_svg(full_tex: str, compiler: str = "latex", message: str = ""):
 
     # Use the custom LaTeX cache directory from the config
     temp_dir = Path(manim_config.directories.latex_cache)
-    temp_dir.mkdir(exist_ok=True)  # Create the directory if it does not already exist
+    temp_dir.mkdir(parents=True, exist_ok=True)
 
     # Define paths for the intermediate TeX and DVI files
     tex_path = temp_dir / "working.tex"
     dvi_path = tex_path.with_suffix(dvi_ext)
 
     # Write tex file
-    tex_path.write_text(full_tex)
+    tex_path.write_text(full_tex, encoding="utf-8")
 
     # Run latex compiler
     process = subprocess.run(
@@ -116,23 +116,26 @@ def full_tex_to_svg(full_tex: str, compiler: str = "latex", message: str = ""):
             *(["-no-pdf"] if compiler == "xelatex" else []),
             "-interaction=batchmode",
             "-halt-on-error",
-            f"-output-directory={temp_dir}",
-            tex_path.as_posix(),
+            tex_path.name,
         ],
+        # TeX parses input filenames as TeX source. Windows short paths can
+        # contain '~', so keep the directory out of the compiler's input.
+        cwd=temp_dir,
         capture_output=True,
         text=True,
     )
 
-    if process.returncode != 0 and not dvi_path.exists():
+    if process.returncode != 0:
         # Handle error
         error_str = ""
         log_path = tex_path.with_suffix(".log")
         if log_path.exists():
-            content = log_path.read_text()
-            error_match = re.search(r"(?<=\n! ).*\n.*\n", content)
+            content = log_path.read_text(errors="replace")
+            error_match = re.search(r"(?m)^! .*(?:\n.*){0,2}", content)
             if error_match:
                 error_str = error_match.group()
-        raise LatexError(error_str or "LaTeX compilation failed")
+        raise LatexError(error_str or process.stderr.strip() or process.stdout.strip()
+                         or "LaTeX compilation failed")
 
     # Run dvisvgm and capture output directly
     process = subprocess.run(
