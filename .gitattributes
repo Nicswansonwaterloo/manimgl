@@ -1,0 +1,4 @@
+# Store text files with LF line endings; Git detects binary files automatically.
+* text=auto eol=lf
+# Windows batch files need CRLF in the working tree to run reliably under cmd.
+*.bat text eol=crlf
